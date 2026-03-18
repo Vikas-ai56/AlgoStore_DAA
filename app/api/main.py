@@ -3,6 +3,22 @@ import time
 from pydantic import BaseModel, Field
 from typing import Literal, Annotated
 
+app = FastAPI()
+
+@app.get("/")
+async def root():
+    # Give an intro to the project if needed
+    return {"message": "MelodyCloud \n this is a audio storage platform which stores etc etc"}
+
+@app.get("/upload")
+async def upload(file_object:str):
+    # call the function to upload
+    return {"detail":f"Just return the file {file_object} is being uploaded"}
+
+
+
+
+
 
 class Item(BaseModel):
     name: str
@@ -10,14 +26,9 @@ class Item(BaseModel):
     price: float
     tax: float | None = None
 
-
-app = FastAPI()
-
 fake_items_db = [{"item_name": "Foo"}, {"item_name": "Bar"}, {"item_name": "Baz"}]
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+
 
 class FilterParams(BaseModel):
     limit: int = Field(100, gt=0, le=100)

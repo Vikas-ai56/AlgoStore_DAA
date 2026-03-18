@@ -1,0 +1,1 @@
+## Image hash storage model

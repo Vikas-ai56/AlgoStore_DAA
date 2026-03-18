@@ -1,0 +1,1 @@
+- Memory Buffers used to store files temporarily before processing

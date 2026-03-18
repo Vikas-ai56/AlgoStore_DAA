@@ -1,0 +1,1 @@
+- Succesfully started running a docker container and created a table for testing as well
