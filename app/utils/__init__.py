@@ -3,5 +3,11 @@ from .heap import (
     heapify,
     heapifyExtract,
     insertNode,
-    extractNode
+    extractNode,
+    MinHeap
+)
+
+from .rle import(
+    rle_encode,
+    rle_decode,
 )

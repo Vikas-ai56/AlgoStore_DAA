@@ -1,3 +1,37 @@
+class MinHeap:
+    def __init__(self): 
+        self.heap = []
+        
+    @property
+    def length(self): 
+        return len(self.heap)
+        
+    def push(self, child):
+        self.heap.append(child)
+        idx = self.length - 1
+        parent = (idx - 1) // 2
+        while idx > 0 and self.heap[parent] > self.heap[idx]:
+            self.heap[parent], self.heap[idx] = self.heap[idx], self.heap[parent]
+            idx = parent
+            parent = (idx - 1) // 2
+            
+    def pop(self):
+        if not self.heap: return None
+        self.heap[0], self.heap[-1] = self.heap[-1], self.heap[0]
+        temp = self.heap.pop()
+        idx = 0
+        while True:
+            left, right = 2 * idx + 1, 2 * idx + 2
+            smallest = idx
+            if left < self.length and self.heap[left] < self.heap[smallest]:
+                smallest = left
+            if right < self.length and self.heap[right] < self.heap[smallest]:
+                smallest = right
+            if smallest == idx: break
+            self.heap[idx], self.heap[smallest] = self.heap[smallest], self.heap[idx]
+            idx = smallest
+        return temp
+    
 class Heap:
     def __init__(self,size):
         self.list = [None]*(size+1)
