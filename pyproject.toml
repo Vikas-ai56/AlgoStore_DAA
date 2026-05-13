@@ -1,7 +1,7 @@
 [project]
 name = "algostore"
 version = "0.1.0"
-description = "Add your description here"
+description = "A image file uploading System with image deduplication"
 readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
@@ -24,9 +24,15 @@ dependencies = [
     "scipy>=1.17.1",
     "sqlalchemy>=2.0.48",
     "uvicorn[standard]>=0.41.0",
+    "imageio==2.37.3",
+    "lazy-loader==0.5",
+    "networkx==3.6.1",
+    "scikit-image==0.26.0",
+    "tifffile==2026.3.3",
+    "graphviz"
 ]
 
 [dependency-groups]
 dev = [
     "ipykernel>=7.2.0",
-]
+],

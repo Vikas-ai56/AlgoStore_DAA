@@ -1,23 +1,13 @@
-# Quantize the DCT matrix -> Apply Run-Length Encoding (RLE) to the sparse zeros -> Apply Huffman Encoding for final compression.
-import os
-import sys
+# NOTE:- You have to add intermediate images during the compression process for presentation
+# MAKE SURE TO THE ABOVE
+
 import numpy as np
 import cv2
 from collections import Counter
-from skimage.metrics import structural_similarity as ssim  
+from scipy.fft import dct, idct
 
-from ..utils import (
-    Heap, 
-    heapify,
-    heapifyExtract,
-    insertNode,
-    extractNode,
-    MinHeap
-)
+from ..utils import MinHeap
 
-# -------------------------------------------------------------------------------
-# Huffman Node initialization
-# -------------------------------------------------------------------------------
 
 class HuffmanNode:
     def __init__(self, value, frequency):
@@ -28,204 +18,211 @@ class HuffmanNode:
 
     def __lt__(self, other):
         return self.frequency < other.frequency
-        
+
     def __gt__(self, other):
         return self.frequency > other.frequency
 
-    def __repr__(self):
-        return f"Node(val={self.value}, freq={self.frequency})"
-    
-# -------------------------------------------------------------------------------
-# Huffman Encode and Decode
-# -------------------------------------------------------------------------------
 
 class Huffman:
-    def __init__(self): 
+    def __init__(self):
         self.tree = None
 
     def rle_encode(self, image_array):
-        # Flatten the 2D array
         flat = image_array.flatten()
-        encoded = []
-        
         if len(flat) == 0:
-            return encoded
-            
-        prev = flat[0]
+            return []
+
+        encoded = []
+        prev = int(flat[0])
         count = 1
-        
+
         for pixel in flat[1:]:
+            pixel = int(pixel)
             if pixel == prev:
                 count += 1
             else:
-                encoded.append((int(prev), count))
+                encoded.append((prev, count))
                 prev = pixel
                 count = 1
-        encoded.append((int(prev), count))
+
+        encoded.append((prev, count))
         return encoded
 
-    def huffman_encode(self, table: dict):
-        minHeap = MinHeap()
-        for char, freq in table.items():
-            minHeap.push(HuffmanNode(char, freq))
-            
-        # Edge case: If the image is a single solid color
-        if minHeap.length == 1:
-            self.tree = minHeap.pop()
-            return {self.tree.char: "0"}
-            
-        while minHeap.length > 1:
-            l = minHeap.pop()
-            r = minHeap.pop()
-            node = HuffmanNode(str(l.frequency + r.frequency), l.frequency + r.frequency)
-            node.left, node.right = l, r
-            minHeap.push(node)
-            
-        self.tree = minHeap.pop()
-        
-        # Pass None instead of {} to avoid the mutable default argument bug!
-        return self.get_codes(self.tree, "", codes=None)
+    def huffman_encode(self, table):
+        heap = MinHeap()
+        for symbol, freq in table.items():
+            heap.push(HuffmanNode(symbol, freq))
 
-    def get_codes(self, node, current_code="", codes=None):
+        if heap.length == 0:
+            self.tree = None
+            return {}
+
+        if heap.length == 1:
+            self.tree = heap.pop()
+            return {self.tree.value: "0"}
+
+        while heap.length > 1:
+            left = heap.pop()
+            right = heap.pop()
+            parent = HuffmanNode(None, left.frequency + right.frequency)
+            parent.left = left
+            parent.right = right
+            heap.push(parent)
+
+        self.tree = heap.pop()
+        return self._get_codes(self.tree)
+
+    def _get_codes(self, node, current_code="", codes=None):
         if codes is None:
             codes = {}
-        if not node: 
+        if node is None:
             return codes
-            
-        if isinstance(node.value, tuple):
-            codes[node.value] = current_code
-            
-        self.get_codes(node.left, current_code + "0", codes)
-        self.get_codes(node.right, current_code + "1", codes)
+
+        if node.left is None and node.right is None:
+            codes[node.value] = current_code if current_code else "0"
+            return codes
+
+        self._get_codes(node.left, current_code + "0", codes)
+        self._get_codes(node.right, current_code + "1", codes)
         return codes
 
     def huffman_decode(self, bitstream, code_to_symbol):
         decoded = []
         current = ""
+
         for bit in bitstream:
             current += bit
             if current in code_to_symbol:
                 decoded.append(code_to_symbol[current])
                 current = ""
+
+        if current:
+            raise ValueError("Invalid or incomplete bitstream for given Huffman codes.")
+
         return decoded
 
     def rle_decode(self, rle_encoded, shape):
         flat = []
         for value, count in rle_encoded:
             flat.extend([value] * count)
-        return np.array(flat, dtype=np.uint8).reshape(shape)
+        return np.array(flat, dtype=np.int16).reshape(shape)
 
-# ------------------------------------------------------------------------------
-# Core Wrappers
-# ------------------------------------------------------------------------------
 
-def compress_image(channel, quantization_factor=32):
+def _dct2(block):
+    return dct(dct(block, axis=0, norm="ortho"), axis=1, norm="ortho")
+
+
+def _idct2(block):
+    return idct(idct(block, axis=0, norm="ortho"), axis=1, norm="ortho")
+
+
+def dct_quantize_image(gray, q_factor=1.0):
+    gray = gray.astype(np.float32)
+    h, w = gray.shape
+
+    pad_h = (8 - (h % 8)) % 8
+    pad_w = (8 - (w % 8)) % 8
+    padded = np.pad(gray, ((0, pad_h), (0, pad_w)), mode="constant", constant_values=0)
+
+    qmat = np.array(
+        [
+            [16, 11, 10, 16, 24, 40, 51, 61],
+            [12, 12, 14, 19, 26, 58, 60, 55],
+            [14, 13, 16, 24, 40, 57, 69, 56],
+            [14, 17, 22, 29, 51, 87, 80, 62],
+            [18, 22, 37, 56, 68, 109, 103, 77],
+            [24, 35, 55, 64, 81, 104, 113, 92],
+            [49, 64, 78, 87, 103, 121, 120, 101],
+            [72, 92, 95, 98, 112, 100, 103, 99],
+        ],
+        dtype=np.float32,
+    ) * float(q_factor)
+    qmat[qmat < 1] = 1
+
+    shifted = padded - 128.0
+    quantized = np.zeros_like(shifted, dtype=np.int16)
+
+    H, W = padded.shape
+    for i in range(0, H, 8):
+        for j in range(0, W, 8):
+            block = shifted[i : i + 8, j : j + 8]
+            dct_block = _dct2(block)
+            quantized[i : i + 8, j : j + 8] = np.round(dct_block / qmat).astype(np.int16)
+
+    return quantized, (h, w), padded.shape
+
+
+def dct_dequantize_reconstruct(quantized, orig_shape, padded_shape, q_factor=1.0):
+    qmat = np.array(
+        [
+            [16, 11, 10, 16, 24, 40, 51, 61],
+            [12, 12, 14, 19, 26, 58, 60, 55],
+            [14, 13, 16, 24, 40, 57, 69, 56],
+            [14, 17, 22, 29, 51, 87, 80, 62],
+            [18, 22, 37, 56, 68, 109, 103, 77],
+            [24, 35, 55, 64, 81, 104, 113, 92],
+            [49, 64, 78, 87, 103, 121, 120, 101],
+            [72, 92, 95, 98, 112, 100, 103, 99],
+        ],
+        dtype=np.float32,
+    ) * float(q_factor)
+    qmat[qmat < 1] = 1
+
+    recon_shifted = np.zeros(padded_shape, dtype=np.float32)
+
+    H, W = padded_shape
+    for i in range(0, H, 8):
+        for j in range(0, W, 8):
+            qblock = quantized[i : i + 8, j : j + 8].astype(np.float32)
+            dequant = qblock * qmat
+            recon_shifted[i : i + 8, j : j + 8] = _idct2(dequant)
+
+    recon = np.clip(np.round(recon_shifted + 128.0), 0, 255).astype(np.uint8)
+    h, w = orig_shape
+    return recon[:h, :w]
+
+
+def compress_image(channel, quantization_factor=24):
     huffman = Huffman()
-    
-    if len(channel.shape) == 3:
+
+    if channel.ndim == 3:
         channel = cv2.cvtColor(channel, cv2.COLOR_BGR2GRAY)
-        
-    original_shape = channel.shape
-        
-    quantized_channel = (channel // quantization_factor) * quantization_factor
-    rle_encoded = huffman.rle_encode(quantized_channel)
-    
+    elif channel.ndim != 2:
+        raise ValueError(f"Unsupported input shape: {channel.shape}. Expected 2D or 3D image.")
+
+    quantized, orig_shape, padded_shape = dct_quantize_image(channel, q_factor=quantization_factor)
+
+    rle_encoded = huffman.rle_encode(quantized)
     freq_table = Counter(rle_encoded)
-    
     codes = huffman.huffman_encode(freq_table)
-    
-    bitstream = ''.join([codes[symbol] for symbol in rle_encoded])
-    code_to_symbol = {v: k for k, v in codes.items()}
-    
-    return bitstream, code_to_symbol, original_shape
-    
-def decompress_image(bitstream, code_to_symbol, shape):
+
+    if not codes:
+        return "", {}, {"orig_shape": orig_shape, "padded_shape": padded_shape, "q_factor": quantization_factor}
+
+    bitstream = "".join(codes[symbol] for symbol in rle_encoded)
+    code_to_symbol = {code: symbol for symbol, code in codes.items()}
+
+    meta = {
+        "orig_shape": orig_shape,
+        "padded_shape": padded_shape,
+        "q_factor": quantization_factor,
+    }
+    return bitstream, code_to_symbol, meta
+
+
+def decompress_image(bitstream, code_to_symbol, meta):
     huffman = Huffman()
-    
+
+    if bitstream == "":
+        h, w = meta["orig_shape"]
+        return np.zeros((h, w), dtype=np.uint8)
+
     decoded_rle = huffman.huffman_decode(bitstream, code_to_symbol)
-    reconstructed = huffman.rle_decode(decoded_rle, shape)
-    
-    return reconstructed
+    quantized = huffman.rle_decode(decoded_rle, meta["padded_shape"])
 
-# ------------------------------------------------------------------------------
-# Engineering Optimization Functions (NEW)
-# ------------------------------------------------------------------------------
-
-def evaluate_compression(original_img, quantized_img, bitstream_length):
-    """Calculates the Rate (Size) and Distortion (SSIM)."""
-    score, _ = ssim(original_img, quantized_img, full=True, data_range=255)
-    original_bits = original_img.size * 8
-    compression_ratio = bitstream_length / original_bits
-    return score, compression_ratio
-
-def find_optimal_quantization(image, target_ssim=0.85):
-    """Sweeps through quantization factors to find optimal compression."""
-    if len(image.shape) == 3:
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    print(f"\n--- Running Rate-Distortion Optimization Sweep ---")
-    print(f"{'Factor':<10} | {'SSIM (Quality)':<15} | {'Compression Ratio'}")
-    print("-" * 50)
-
-    best_factor = 1
-    best_ratio = 1.0
-    test_factors = [1, 8, 16, 24, 32, 48, 64, 96, 128]
-
-    for q in test_factors:
-        quantized = (image // q) * q
-        bitstream, _, _ = compress_image(image, quantization_factor=q)
-        current_ssim, current_ratio = evaluate_compression(image, quantized, len(bitstream))
-        
-        print(f"q={q:<8} | {current_ssim:<15.4f} | {current_ratio:.2%}")
-
-        if current_ssim >= target_ssim:
-            if current_ratio < best_ratio:
-                best_ratio = current_ratio
-                best_factor = q
-        else:
-            break
-
-    print("-" * 50)
-    print(f"Optimal Factor Selected: {best_factor} (Target SSIM >= {target_ssim})\n")
-    return best_factor
-
-# ------------------------------------------------------------------------------
-# Execution
-# ------------------------------------------------------------------------------
-
-if __name__ == "__main__":
-    image_path = "/home/vikas/Pictures/Screenshots/Screenshot from 2026-03-21 16-00-21.png"
-    print(f"Loading test image from: {image_path}")
-    real_image = cv2.imread(image_path)
-    
-    if real_image is None:
-        print("Error: Could not load image. Please verify the file path.")
-    else:
-        if len(real_image.shape) == 3:
-            original_gray = cv2.cvtColor(real_image, cv2.COLOR_BGR2GRAY)
-        else:
-            original_gray = real_image
-
-        optimal_q = find_optimal_quantization(original_gray, target_ssim=0.85)
-
-        print("Compressing with optimal factor...")
-        bitstream, dict_mapping, shape = compress_image(original_gray, quantization_factor=optimal_q)
-
-        original_bits = original_gray.size * 8
-        compressed_bits = len(bitstream)
-        ratio = compressed_bits / original_bits
-        
-        print("\n--- Final Compression Report ---")
-        print(f"Original Size (Grayscale): {original_bits:,} bits")
-        print(f"Compressed Size:           {compressed_bits:,} bits")
-        print(f"Compression Ratio:         {ratio:.2%} of original size")
-        
-        print("\nDecompressing...")
-        reconstructed_image = decompress_image(bitstream, dict_mapping, shape)
-        print(f"Reconstruction Successful: {reconstructed_image.shape == shape}")
-               
-        cv2.imshow("1 - Original (Grayscale)", original_gray)
-        cv2.imshow(f"2 - Reconstructed (Quantization Factor={optimal_q})", reconstructed_image)
-        
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
+    return dct_dequantize_reconstruct(
+        quantized=quantized,
+        orig_shape=meta["orig_shape"],
+        padded_shape=meta["padded_shape"],
+        q_factor=meta["q_factor"],
+    )

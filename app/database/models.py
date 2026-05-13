@@ -1,6 +1,6 @@
 from datetime import datetime
-from typing import Optional, Literal
-from sqlalchemy import Column, String, DateTime, Text
+
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text
 from sqlalchemy.orm import declarative_base
 
 Base = declarative_base()
@@ -15,12 +15,37 @@ class User(Base):
     occupation = Column(String)
 
 
+class Image(Base):
+    __tablename__ = "images"
+
+    image_id = Column(String, primary_key=True)
+    filename = Column(String, nullable=False)
+    stored_path = Column(String, nullable=False)
+    upload_timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    width = Column(Integer, nullable=False)
+    height = Column(Integer, nullable=False)
+    file_size = Column(Integer, nullable=False)
+    sha256 = Column(String, nullable=False, unique=True, index=True)
+
+
+class CompressionResult(Base):
+    __tablename__ = "compression_results"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    image_id = Column(String, ForeignKey("images.image_id"), nullable=False, index=True)
+    original_size = Column(Integer, nullable=False)
+    compressed_size = Column(Integer, nullable=False)
+    compression_ratio = Column(Float, nullable=False)
+    metadata_json = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
 ## Tables needed in SQL database
 
 # images
 
-#     id
-#     original_filename
+#     image_id
+#     filename
 #     stored_path
 #     upload_timestamp
 #     width
@@ -28,15 +53,13 @@ class User(Base):
 #     file_size
 #     sha256
 
-# jobs
+# details of the image
 
 #     id
 #     image_id
 #     job_type
 #     status
 #     created_at
-#     started_at
-#     finished_at
 #     error_message
 
 # phash_results
@@ -50,7 +73,6 @@ class User(Base):
 
 #     id
 #     image_id
-#     algorithm_name
 #     original_size
 #     compressed_size
 #     compression_ratio
