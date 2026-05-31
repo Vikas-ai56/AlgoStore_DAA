@@ -1,0 +1,1449 @@
+# AlgoStore — Image Storage Platform with Algorithmic Deduplication
+
+> **DAA Coursework Project** — Design and Analysis of Algorithms  
+> All core algorithms (compression, hashing, similarity search) are implemented from scratch.
+
+---
+
+## Table of Contents
+
+1. [Project Overview](#1-project-overview)
+2. [Architecture Overview](#2-architecture-overview)
+3. [Folder Structure](#3-folder-structure)
+4. [File Explanations](#4-file-explanations)
+5. [Execution Flow](#5-execution-flow)
+6. [API Documentation](#6-api-documentation)
+7. [Database Documentation](#7-database-documentation)
+8. [Environment Variables](#8-environment-variables)
+9. [Dependencies](#9-dependencies)
+10. [External Services](#10-external-services)
+11. [Setup & Running the Project](#11-setup--running-the-project)
+12. [Mermaid Diagrams](#12-mermaid-diagrams)
+13. [Known Limitations & Bugs](#13-known-limitations--bugs)
+14. [Future Work](#14-future-work)
+
+---
+
+## 1. Project Overview
+
+AlgoStore is an image storage and retrieval platform that uses three custom-implemented algorithms to eliminate redundant storage:
+
+| Goal | Algorithm | File |
+|------|-----------|------|
+| Exact duplicate detection | SHA-256 | `app/core/exact_hash.py` *(stub)* |
+| Near-duplicate detection (resized, re-encoded same image) | Perceptual Hash (pHash) | `app/core/phash.py` |
+| Fast similarity search over millions of hashes | BK-Tree (Burkhard-Keller) | `app/core/similarity.py` |
+| Reduce storage footprint | JPEG-like DCT + Huffman compression | `app/core/compression.py` |
+
+The system compresses every uploaded image using a custom pipeline that mirrors how JPEG works — 8×8 block DCT, quantization, run-length encoding, and Huffman coding — and stores the resulting binary blob in MinIO. Metadata and compression statistics go into PostgreSQL.
+
+**Current completion: ~30%.** The algorithm layer is production-quality. The HTTP API and database repository layer are empty stubs that have not been started.
+
+---
+
+## 2. Architecture Overview
+
+### Intended Architecture
+
+```
+Client (HTTP)
+      │
+      ▼
+┌─────────────────┐
+│  FastAPI API    │  ← app/api/main.py  [STUB — not connected]
+│  POST /upload   │
+│  GET  /similar  │
+│  GET  /jobs/:id │
+└────────┬────────┘
+         │  enqueue task via Redis
+         ▼
+┌─────────────────┐        ┌──────────────────────┐
+│  Redis (broker) │───────►│  Celery Worker        │
+│  port 6379      │        │  app/worker/tasks.py  │
+└─────────────────┘        │                      │
+                           │  1. cv2 read image   │
+                           │  2. compute pHash    │
+                           │  3. DCT + quantize   │
+                           │  4. RLE encode       │
+                           │  5. Huffman encode   │
+                           │  6. pickle → .bin    │
+                           └──────────┬───────────┘
+                                      │
+                    ┌─────────────────┴──────────────────┐
+                    │                                    │
+                    ▼                                    ▼
+         ┌──────────────────┐                ┌──────────────────┐
+         │  MinIO (S3)      │                │  PostgreSQL       │
+         │  port 9000       │                │  port 5432       │
+         │  stores .bin     │                │  images table    │
+         │  compressed blobs│                │  compression_    │
+         └──────────────────┘                │  results table   │
+                                             └──────────────────┘
+```
+
+### What Is Actually Wired End-to-End Today
+
+```
+[Python script / test]
+        │
+        ▼
+app/worker/tasks.py :: process_compressed_image()
+        │
+        ├── app/core/compression.py  (DCT + RLE + Huffman)
+        ├── app/core/phash.py        (perceptual hash)
+        └── app/services/upload_service.py
+                ├── MinIO (boto3)
+                └── PostgreSQL (SQLAlchemy)
+```
+
+The API layer is not connected. The BK-Tree exists in memory but has no bridge to the database or API.
+
+---
+
+## 3. Folder Structure
+
+```
+AlgoStore_DAA/
+│
+├── main.py                    # Root entry point (placeholder — prints hello)
+├── healthcheck.py             # Pre-test service readiness checker
+├── pyproject.toml             # Project metadata + Python dependencies (uv)
+├── .python-version            # Python 3.13
+├── .env.example               # EMPTY — must be created manually
+│
+├── app/
+│   ├── api/                   # HTTP layer (FastAPI)
+│   │   ├── main.py            # FastAPI app instance [HAS PLACEHOLDER CODE]
+│   │   ├── config.py          # [EMPTY STUB]
+│   │   ├── deps.py            # FastAPI dependency injectors [EMPTY STUB]
+│   │   ├── routes/
+│   │   │   ├── images.py      # [EMPTY STUB]
+│   │   │   ├── jobs.py        # [EMPTY STUB]
+│   │   │   └── analysis.py   # [EMPTY STUB]
+│   │   └── schemas/
+│   │       ├── image.py       # [EMPTY STUB]
+│   │       ├── job.py         # [EMPTY STUB]
+│   │       └── analysis.py   # [EMPTY STUB] — note: file is actually named analysis.py
+│   │
+│   ├── config/
+│   │   └── config.py          # Pydantic Settings (PostgresDsn builder)
+│   │
+│   ├── core/                  # Algorithm implementations — the heart of the project
+│   │   ├── compression.py     # COMPLETE: DCT + quantization + RLE + Huffman
+│   │   ├── phash.py           # COMPLETE: 64-bit DCT perceptual hash
+│   │   ├── similarity.py      # COMPLETE: BK-Tree for Hamming distance search
+│   │   └── exact_hash.py      # STUB: SHA-256 deduplication (only a comment)
+│   │
+│   ├── database/
+│   │   ├── models.py          # SQLAlchemy ORM models (Image, CompressionResult)
+│   │   ├── connection.py      # Engine + session factory
+│   │   ├── session.py         # Table-creation bootstrap script
+│   │   ├── base.py            # [EMPTY STUB]
+│   │   ├── setup.md           # Manual psql setup instructions
+│   │   └── repositories/      # Data access layer — all STUBS
+│   │       ├── images.py
+│   │       ├── jobs.py
+│   │       └── results.py
+│   │
+│   ├── services/
+│   │   ├── upload_service.py  # COMPLETE: MinIO upload + PostgreSQL record creation
+│   │   ├── analysis_service.py# [EMPTY STUB]
+│   │   └── job_service.py     # [EMPTY STUB]
+│   │
+│   ├── tests/
+│   │   ├── test_compression.py    # Visual compression test (needs assets/test.png)
+│   │   ├── test_minio.py          # MinIO connectivity smoke test
+│   │   ├── test_pipeline.py       # Integration test suite [BROKEN — missing import]
+│   │   └── test_redis_connection.py # Redis ping test
+│   │
+│   ├── utils/
+│   │   ├── __init__.py        # Exports MinHeap, rle_encode, rle_decode
+│   │   ├── heap.py            # MinHeap (used by Huffman) + legacy Heap class
+│   │   └── rle.py             # Standalone RLE encoder/decoder
+│   │
+│   └── worker/
+│       ├── celery_app.py      # Celery instance [HAS BUG — wrong broker URL scheme]
+│       ├── tasks.py           # process_compressed_image Celery task
+│       └── __init__.py        # Re-exports celery app
+│
+├── docker/
+│   ├── docker-compose.yml     # COMPLETE: Postgres 15, Redis 7, MinIO
+│   ├── api.Dockerfile         # [EMPTY]
+│   └── worker.Dockerfile      # [EMPTY]
+│
+├── docs/
+│   ├── compression-migration.md  # 24-point technical notes on JPEG refactor
+│   ├── algo-explain/huffman.md   # Huffman algorithm reference
+│   ├── brainstorm.md             # Single line note
+│   ├── architecture.md           # Empty
+│   └── week-1.md … week-5.md    # Developer progress journals
+│
+└── playground/
+    ├── test_compression.py    # [EMPTY]
+    └── test_phash.py          # [EMPTY]
+```
+
+---
+
+## 4. File Explanations
+
+Files are ordered by importance / centrality to the working system.
+
+---
+
+### `app/core/compression.py` — **Complete**
+
+**Why it exists:** Implements a JPEG-like lossy compression pipeline from scratch to satisfy the DAA requirement of algorithm implementation without library wrappers.
+
+**Responsibility:** Takes a single 2D image channel (numpy array, uint8) and returns a compressed bitstream. Also performs the inverse operation.
+
+**Depends on:** `app/utils/heap.py` (MinHeap), `numpy`, `scipy.fft`, `cv2`
+
+**Depended on by:** `app/worker/tasks.py`, `app/tests/test_compression.py`, `app/tests/test_pipeline.py`
+
+**Important classes/functions:**
+
+| Symbol | Purpose |
+|--------|---------|
+| `HuffmanNode` | Binary tree node. Carries `value`, `frequency`, `left`, `right`. Implements `__lt__`/`__gt__` so it's usable in MinHeap. |
+| `Huffman` | Stateful encoder. Holds `self.tree` after `huffman_encode()` is called. |
+| `Huffman.rle_encode(image_array)` | Flattens a 2D array, produces `[(value, count), ...]` tuples. This is the pre-step before Huffman: long runs of the same DCT coefficient compress well. |
+| `Huffman.huffman_encode(table)` | Builds a frequency table → MinHeap → Huffman tree → code dictionary `{symbol: bit_string}`. |
+| `Huffman.huffman_decode(bitstream, code_to_symbol)` | Reconstructs RLE tuples from a bit string using the inverted code table. |
+| `Huffman.rle_decode(rle_encoded, shape)` | Expands RLE tuples back to a 2D `int16` array. |
+| `dct_quantize_image(gray, q_factor)` | Pads the image to a multiple of 8, applies JPEG quantization matrix (scaled by `q_factor`) per 8×8 block. Returns `(quantized: int16, orig_shape, padded_shape)`. |
+| `dct_dequantize_reconstruct(quantized, orig_shape, padded_shape, q_factor)` | Inverse: multiply by quantization matrix → IDCT per block → clip → crop to original size. |
+| `compress_image(channel, quantization_factor=24)` | **Public API.** Orchestrates: DCT → RLE → Huffman. Returns `(bitstream: str, code_to_symbol: dict, meta: dict)`. |
+| `decompress_image(bitstream, code_to_symbol, meta)` | **Public API.** Orchestrates: Huffman decode → RLE decode → IDCT. Returns reconstructed `uint8` array. |
+
+**Execution flow inside the file:**
+
+```
+compress_image(channel, q_factor)
+  ├── dct_quantize_image(channel, q_factor)
+  │     ├── Pad to 8×8 boundary
+  │     ├── For each 8×8 block:
+  │     │     ├── block -= 128  (level shift)
+  │     │     ├── _dct2(block)  → separable 2D DCT
+  │     │     └── round(block / qmat) → int16
+  │     └── return quantized, orig_shape, padded_shape
+  │
+  ├── Huffman().rle_encode(quantized)
+  │     └── [(coeff, run_len), ...] for flattened quantized matrix
+  │
+  ├── Counter(rle_encoded) → frequency table
+  │
+  ├── Huffman().huffman_encode(freq_table)
+  │     ├── Push all symbols onto MinHeap
+  │     ├── While heap.length > 1: pop two, merge, push parent
+  │     └── Walk tree → {symbol: "0101..."} code table
+  │
+  └── Join codes for each RLE symbol → bitstream string
+```
+
+**Design patterns:** Strategy (the `Huffman` class separates encoding policy from the quantization concern). The `compress_image` / `decompress_image` pair are a symmetric codec API — they maintain the same signature regardless of internal algorithm changes.
+
+**Potential issues:**
+- `q_factor=24` is a high quantization factor, producing aggressive compression with noticeable quality loss. Lower values (e.g., `2.0`) give near-lossless results.
+- Bitstream is stored as a Python string of `'0'` and `'1'` characters, not packed bits. A 100×100 image produces a string of millions of characters. This is not production-efficient; a real implementation would use `bitarray` or `struct.pack`.
+- The per-channel approach in the worker (`cv2.split` then compress each channel) means the compression is independent per channel — there's no chroma subsampling as in real JPEG.
+- The compression migration notes (`docs/compression-migration.md`) describe a more sophisticated JPEG-compliant approach (DC differential coding, zigzag scan, AC (run, size) symbols) — **these changes are documented but the current code does not implement all of them.** The current code uses a simpler flat RLE over the entire quantized block array.
+
+---
+
+### `app/core/phash.py` — **Complete**
+
+**Why it exists:** Perceptual hashing enables detection of near-duplicate images — images that are visually the same but differ in resolution, compression quality, or minor cropping. SHA-256 cannot detect these; pHash can.
+
+**Responsibility:** Computes a 64-bit DCT-based perceptual hash for any image and measures the Hamming distance between two hashes.
+
+**Depends on:** `numpy`, `scipy.fft`, `cv2`
+
+**Depended on by:** `app/worker/tasks.py`, `app/core/similarity.py` (indirectly via `phash_distance`)
+
+**Important functions:**
+
+| Function | Signature | Purpose |
+|----------|-----------|---------|
+| `_load_grayscale(image)` | `np.ndarray \| str \| Path → np.ndarray` | Normalizes input to a float32 grayscale array. Handles BGR images, grayscale, or file paths. |
+| `compute_phash(image, hash_size=8, highfreq_factor=4)` | → `str` (16 hex chars) | Computes 64-bit pHash. Returns a 16-character hex string. |
+| `phash_distance(hash_a, hash_b)` | `str, str → int` | Hamming distance. XORs two hex strings and counts set bits using Python's `.bit_count()`. |
+
+**Algorithm inside `compute_phash`:**
+
+```
+1. Convert to grayscale float32
+2. Resize to (hash_size * highfreq_factor) × same = 32×32
+3. Apply 2D DCT (as two 1D DCTs: rows then columns)
+4. Crop top-left 8×8 — this is the low-frequency region
+5. Compute mean of [1:, 1:] (exclude DC coefficient)
+6. Threshold: bits = (low_freq >= mean)
+7. Flatten 64 bits → integer → format as 16-char hex string
+```
+
+**Design pattern:** The algorithm follows the standard pHash specification. The `_load_grayscale` helper normalizes input — this is a common *adapter* pattern, letting the public function accept multiple image representations.
+
+**Potential issues:**
+- `hash_size=8` and `highfreq_factor=4` are well-established defaults for 64-bit pHash; changing them changes the hash length and breaks comparability with stored hashes.
+- The DC coefficient (`[0,0]`) is excluded from the mean calculation (the `[1:, 1:]` slice). This is intentional: the DC value encodes overall brightness and would make the hash brightness-sensitive.
+
+---
+
+### `app/core/similarity.py` — **Complete**
+
+**Why it exists:** Naive linear scan over all stored pHashes would be O(n) per query. BK-Trees reduce this to O(log n) average case for metric spaces — and Hamming distance satisfies the metric axioms (triangle inequality).
+
+**Responsibility:** In-memory BK-Tree data structure supporting `add()` and `search()` operations.
+
+**Depends on:** `app/core/phash.py` (`phash_distance`)
+
+**Depended on by:** Nothing yet — no code builds or queries this tree at runtime.
+
+**Important classes:**
+
+| Class / Method | Purpose |
+|----------------|---------|
+| `BKNode` | Tree node: holds `phash`, `image_ids` list (allows multiple images with identical hash), `children` dict keyed by Hamming distance. |
+| `BKTree.add(phash_str, image_id)` | Walks the tree. At each node, computes distance. If distance=0, adds `image_id` to existing node. Otherwise recurse or create child at that distance. |
+| `BKTree.search(query_phash, max_distance=10)` | BFS/DFS with triangle inequality pruning. Returns `[(distance, phash, image_id)]` sorted ascending by distance. |
+
+**Execution flow of `search`:**
+
+```
+search(query, max_dist):
+  candidates = [root]
+  while candidates:
+    node = candidates.pop()
+    dist = phash_distance(query, node.phash)
+    if dist <= max_dist: append all node.image_ids to results
+    
+    # Triangle inequality prune:
+    for child_dist, child_node in node.children.items():
+      if (dist - max_dist) <= child_dist <= (dist + max_dist):
+        candidates.append(child_node)
+        
+  return sorted(results)
+```
+
+**Design pattern:** BK-Tree is a specialized *metric tree*. The triangle inequality pruning means: if a node is `dist` away from the query, then any node connected to it at distance `d` outside `[dist-k, dist+k]` is guaranteed to be further than `k` from the query and can be skipped entirely.
+
+**Potential issues:**
+- The tree is pure in-memory. There is no serialization. Every restart loses all entries — they must be rebuilt from the database. The code to do this rebuild has not been written.
+- Default `max_distance=10` is a very wide search (out of 64 bits). Typical similarity thresholds are 5–8. A `max_distance` of 10 may return many false positives.
+
+---
+
+### `app/worker/tasks.py` — **Functional (with 1 critical upstream bug)**
+
+**Why it exists:** Image compression is CPU-heavy and should not block the HTTP request thread. Celery moves this work to a separate process pool.
+
+**Responsibility:** The single Celery task `process_compressed_image` orchestrates the entire processing pipeline: read → hash → compress per channel → serialize → (optionally) upload.
+
+**Depends on:** `app/worker/celery_app.py`, `app/core/compression.py`, `app/core/phash.py`, `app/services/upload_service.py`, `pickle`, `cv2`
+
+**Depended on by:** API routes (not yet written), test pipeline
+
+**Function signature:**
+
+```python
+@app.task(name="worker.process_compressed_image")
+def process_compressed_image(
+    image_path: str,
+    quantization_factor: float = 24,
+    upload_needed: bool = True,
+    obj_name: str | None = None,
+    phash_value: str | None = None,
+) -> dict
+```
+
+**Execution flow:**
+
+```
+1. Read image from disk: cv2.imread(image_path, IMREAD_COLOR)
+2. Compute pHash (if not pre-supplied): compute_phash(image)
+3. Split into B, G, R channels: cv2.split(image)
+4. For each channel:
+     compress_image(channel, quantization_factor)
+     → (bitstream, code_to_symbol, meta)
+5. pickle.dump([B_data, G_data, R_data]) → {stem}_compressed.bin
+6. If upload_needed:
+     Upload().upload(compressed_file, ...)  → MinIO + PostgreSQL
+     Delete local .bin file
+7. Return result dict with original_size, compressed_size, compression_ratio, phash
+```
+
+**Return value:**
+
+```python
+{
+    "image_path": str,
+    "phash": str,            # 16-char hex pHash
+    "original_size": int,    # bytes of input image
+    "compressed_size": int,  # bytes of .bin file
+    "compression_ratio": float,
+    "upload_response": dict  # present only if upload_needed=True
+}
+```
+
+**Potential issues:**
+- The broker URL in `celery_app.py` uses `http://` instead of `redis://` — the Celery task cannot be dispatched asynchronously until this is fixed.
+- The compression ratio compares the pickled `.bin` file size against the original image file size. This may be misleading: `pickle.dump` adds Python-specific overhead, and the input image might already be JPEG-compressed. A fairer metric would compare against the raw pixel count.
+
+---
+
+### `app/services/upload_service.py` — **Complete**
+
+**Why it exists:** Encapsulates all I/O for storing a processed image — both the binary blob (MinIO) and the relational metadata (PostgreSQL). Keeps these concerns out of the Celery task.
+
+**Responsibility:** `Upload` class handles MinIO bucket management, file upload, SHA-256 hashing, image dimension reading, and writing two PostgreSQL rows (Image + CompressionResult).
+
+**Depends on:** `boto3`, `PIL`, `sqlalchemy`, `app/database/models.py`, `app/database/connection.py`
+
+**Depended on by:** `app/worker/tasks.py`
+
+**Important methods:**
+
+| Method | Purpose |
+|--------|---------|
+| `__init__(bucket="main-bucket")` | Creates boto3 S3 client pointing at MinIO. Calls `_ensure_bucket()`. |
+| `_ensure_bucket()` | HEAD-checks the bucket. Creates it if not found. Idempotent. |
+| `_get_image_dimensions(path)` | Opens with PIL. Returns `(width, height)`. Returns `(0, 0)` on failure (e.g., for `.bin` blobs that PIL can't read). |
+| `_build_image_record(path, obj_name)` | Hashes file bytes with SHA-256, reads file size, builds a dict matching the `Image` ORM model. |
+| `upload(path, obj_name, metadata, **kwargs)` | Full upload: upload to MinIO → build record → write Image row → write CompressionResult row → commit. |
+
+**Potential issues:**
+- MinIO credentials (`minioadmin` / `daa-storages`) and endpoint (`http://localhost:9000`) are hardcoded. Must be moved to environment variables before any deployment.
+- The `sha256` field has a `unique=True` constraint on the `Image` model. Uploading two different `.bin` files that happen to hash the same (astronomically unlikely) or uploading the same file twice with a different `obj_name` will raise a database integrity error. The service does not catch this case.
+- `session.close()` is called in `finally`, but `get_session()` returns a raw `SessionLocal()` — there is no context manager. If `session.rollback()` itself fails, the session could be left open.
+
+---
+
+### `app/core/phash.py` *(covered above)*
+
+---
+
+### `app/database/models.py` — **Partial**
+
+**Why it exists:** SQLAlchemy ORM definitions for the PostgreSQL schema. Lets Python code work with database rows as objects.
+
+**Responsibility:** Declares table structure. Running `Base.metadata.create_all(engine)` creates the physical tables.
+
+**Current models:**
+
+| Model | Table | Status |
+|-------|-------|--------|
+| `User` | `"User profile"` | Has a space in the table name — broken SQL. Primary key column is named `_id` (underscore-prefixed — unusual). |
+| `Image` | `images` | Functional. Stores file metadata and MinIO path. |
+| `CompressionResult` | `compression_results` | Functional. FK to `images.image_id`. Stores sizes, ratio, metadata JSON. |
+
+**Columns of `Image`:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `image_id` | String PK | UUID hex, generated by upload service |
+| `filename` | String | Original filename or object name |
+| `stored_path` | String | S3 path e.g. `s3://main-bucket/file.bin` |
+| `upload_timestamp` | DateTime | Defaults to `datetime.utcnow` |
+| `width` | Integer | Image width in pixels |
+| `height` | Integer | Image height in pixels |
+| `file_size` | Integer | File size in bytes |
+| `sha256` | String | Unique + indexed — used for exact deduplication |
+
+**Columns of `CompressionResult`:**
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | Integer PK | Autoincrement |
+| `image_id` | String FK | References `images.image_id` |
+| `original_size` | Integer | Raw image size in bytes |
+| `compressed_size` | Integer | Compressed .bin size in bytes |
+| `compression_ratio` | Float | `compressed_size / original_size` |
+| `metadata_json` | JSON | Arbitrary dict (e.g., `{"q_factor": 24.0}`) |
+| `created_at` | DateTime | Defaults to `datetime.utcnow` |
+
+**Missing tables** (noted in model file comments but not implemented):
+
+- `phash_results` — store computed pHash values per image
+- `similarity_results` — store pairwise Hamming distances
+- `jobs` — track Celery task status (pending/running/done/failed)
+
+---
+
+### `app/database/connection.py` — **Functional (has one copy-paste bug)**
+
+**Why it exists:** Creates the SQLAlchemy engine and session factory from environment variables.
+
+**Responsibility:** Provides `engine` and `get_session()`.
+
+**Bug:** The default database name fallback is `"ai_news_aggregator"` (copied from a different project). Should be `"postgres-algostore-daa"` to match `docker-compose.yml`.
+
+---
+
+### `app/database/session.py` — **Functional**
+
+**Why it exists:** One-shot script to create all database tables. Run once after PostgreSQL starts.
+
+**Usage:** `python app/database/session.py`
+
+**Note:** This imports `Base` from `app/database/models.py` and calls `Base.metadata.create_all(engine)`. It is not a migration system — it only creates tables, never modifies or drops them. For schema changes, Alembic (already in `pyproject.toml`) should be used.
+
+---
+
+### `app/worker/celery_app.py` — **Has critical bug**
+
+**Why it exists:** Initializes the Celery application object that tasks are registered against.
+
+**Bug on line 7:**
+
+```python
+# CURRENT (broken — http:// is not a valid Celery broker scheme):
+REDIS_URL = f"http://localhost:{os.getenv("REDIS_PORT")}"
+
+# CORRECT:
+REDIS_URL = f"redis://localhost:{os.getenv('REDIS_PORT', '6379')}"
+```
+
+Until this is fixed, running `celery -A app.worker worker` will fail to connect to the broker and no tasks will be processed.
+
+---
+
+### `app/utils/heap.py` — **Complete (contains legacy code)**
+
+**Why it exists:** Provides `MinHeap` for the Huffman tree construction algorithm — `heapq` from the standard library only works with raw values, not custom nodes with `__lt__`.
+
+**Two separate implementations exist:**
+
+1. **`MinHeap`** (lines 1–33) — Clean class-based implementation. `push()` and `pop()` with sift-up/sift-down. Used by `Huffman.huffman_encode()`.
+
+2. **`Heap`** + free functions `heapify`, `insertNode`, `extractNode`, `heapifyExtract` (lines 35–110) — Older array-based heap using 1-indexed storage. Not used anywhere in the current codebase. Preserved for reference / presentation purposes.
+
+**Potential issue:** Having two implementations is confusing. The old `Heap` class has a `bug` in `heapifyExtract` — the recursive call is only in the `else` branch for Max heaps, so Min-heap sift-down may stop early.
+
+---
+
+### `app/utils/rle.py` — **Complete (not used by compression pipeline)**
+
+**Why it exists:** Standalone module-level RLE functions for general use.
+
+**Note:** `compression.py` implements its own `Huffman.rle_encode()` and `Huffman.rle_decode()` inline. The functions in `rle.py` are not imported by the compression pipeline. They produce the same output but are independent copies.
+
+**Functions:**
+
+| Function | Signature | Notes |
+|----------|-----------|-------|
+| `rle_encode(flat_pixel_array)` | `array → [(int, int)]` | Same algorithm as `Huffman.rle_encode`. Returns uint8 decoded pixels. |
+| `rle_decode(encoded_data)` | `[(int, int)] → np.ndarray` | Returns `uint8` array (vs `int16` in Huffman version). |
+
+---
+
+### `healthcheck.py` — **Functional (has wrong table names)**
+
+**Why it exists:** Pre-flight check before running tests. Confirms Redis, MinIO, and PostgreSQL are all reachable and the database tables exist.
+
+**Bug:** Lines 58–59 query `"Image"` and `"CompressionResult"` (quoted, case-sensitive). The actual `__tablename__` values are `images` and `compression_results` (lowercase). These queries will always fail.
+
+**Correct table names:**
+```python
+conn.execute(text('SELECT 1 FROM images LIMIT 1'))
+conn.execute(text('SELECT 1 FROM compression_results LIMIT 1'))
+```
+
+**Usage:** `python healthcheck.py`
+
+---
+
+### `app/config/config.py` — **Functional**
+
+**Why it exists:** Centralizes configuration into a typed Pydantic `Settings` object. Supports both environment variable passwords and Docker secrets (file-based passwords).
+
+**Key behavior:** The `@model_validator` ensures at least one of `POSTGRES_PASSWORD` or `POSTGRES_PASSWORD_FILE` is set. If `POSTGRES_PASSWORD_FILE` is given, the file is read at startup time and its contents used as the password. This is the Docker secrets pattern.
+
+**The `SQLALCHEMY_DATABASE_URI` computed field** builds a `PostgresDsn` using `MultiHostUrl.build()` which validates the URL structure at settings initialization time.
+
+**Potential issue:** `settings = Settings()` runs at module import time. If environment variables are missing, importing this module will raise a Pydantic `ValidationError`. This is intentional fail-fast behavior but can be surprising during testing.
+
+---
+
+### `app/api/main.py` — **Contains placeholder/tutorial code**
+
+**Why it should exist:** Register the FastAPI application and mount route modules.
+
+**What it actually contains:** Demo code copied from another project (`"MelodyCloud"`), including a fake items database, tutorial endpoints (`/fakeDB`, `/nitems/{item_id}`), and unrelated filter parameter models.
+
+**What it should contain:**
+
+```python
+from fastapi import FastAPI
+from app.api.routes import images, jobs, analysis
+
+app = FastAPI(title="AlgoStore", version="0.1.0")
+
+app.include_router(images.router, prefix="/images")
+app.include_router(jobs.router,   prefix="/jobs")
+app.include_router(analysis.router, prefix="/analysis")
+```
+
+---
+
+### `app/tests/test_pipeline.py` — **Broken (import error)**
+
+**Why it exists:** End-to-end integration test covering all services. Requires Docker services running.
+
+**Why it's broken:** Line 19 imports `from app.services.retrieval_service import Retrieval`, but `retrieval_service.py` does not exist. The entire file fails at import time.
+
+**Tests defined (not runnable until import is fixed):**
+
+| Test | Checks |
+|------|--------|
+| `test_redis_connection` | Redis ping |
+| `test_minio_connection` | MinIO bucket listing |
+| `test_database_connection` | `Base.metadata.create_all` |
+| `test_compression_roundtrip` | compress → decompress on random 64×64 channel |
+| `test_serialization` | pickle round-trip of compression output |
+| `test_minio_upload` | Upload class end-to-end |
+| `test_database_storage` | Insert Image + CompressionResult, retrieve |
+| `test_worker_task` | Call `process_compressed_image` in sync mode |
+| `test_end_to_end` | compress + upload + retrieve + decompress |
+
+---
+
+### `app/tests/test_compression.py` — **Functional**
+
+Compresses a color image channel-by-channel at `Q_FACTOR=2.0`, decompresses, and displays the result in an `imshow` window. Requires `assets/test.png` at the repo root.
+
+---
+
+### `docker/docker-compose.yml` — **Complete**
+
+Defines three services:
+
+| Service | Image | Port | Purpose |
+|---------|-------|------|---------|
+| `postgres` | `postgres:15.17-trixie` | 5432 | Relational metadata store |
+| `redis` | `redis:7-alpine` | 6379 | Celery task broker |
+| `minio` | `minio/minio:latest` | 9000 (API), 9001 (UI) | S3-compatible object storage |
+
+All three have healthchecks configured. Data is persisted in named volumes (`postgres_data`, `minio_data`).
+
+---
+
+## 5. Execution Flow
+
+### Upload Flow (intended — not fully wired)
+
+```
+User Action: POST /images/upload  with file=photo.jpg
+      │
+      ▼
+app/api/routes/images.py  [NOT WRITTEN]
+  ├── Read file bytes from multipart body
+  ├── Compute SHA-256 of raw bytes
+  ├── Query DB: does sha256 exist in images.sha256?
+  │     YES → return 200 { duplicate: true, image_id: <existing> }
+  │     NO  → continue
+  ├── Save temp file to disk
+  └── Enqueue Celery task: process_compressed_image.delay(...)
+        Returns job_id immediately (202 Accepted)
+      │
+      ▼
+Redis broker (port 6379)
+  └── Stores task message: { task: "worker.process_compressed_image", args: {...} }
+      │
+      ▼
+app/worker/tasks.py :: process_compressed_image()
+  │
+  ├── cv2.imread(image_path, IMREAD_COLOR)
+  │       → numpy array (H, W, 3) uint8
+  │
+  ├── compute_phash(image)
+  │       → "a3f2e1d0c4b59876"  (16-char hex)
+  │
+  ├── cv2.split(image)
+  │       → [B_channel, G_channel, R_channel]  each (H, W) uint8
+  │
+  ├── For each channel (B, G, R):
+  │     compress_image(channel, quantization_factor=24)
+  │     │
+  │     ├── dct_quantize_image(channel)
+  │     │     ├── Pad to multiple of 8
+  │     │     └── Per 8×8 block: shift → 2D DCT → divide by qmat → round → int16
+  │     │
+  │     ├── Huffman.rle_encode(quantized_flat)
+  │     │     → [(coeff_val, run_len), ...]
+  │     │
+  │     ├── Counter(rle_encoded) → frequency table
+  │     │
+  │     ├── Huffman.huffman_encode(freq_table)
+  │     │     ├── Push HuffmanNodes onto MinHeap
+  │     │     ├── Merge two lowest-frequency nodes repeatedly
+  │     │     └── Walk tree → {symbol: "010..."} code dict
+  │     │
+  │     └── Join codes → bitstream string
+  │           Returns: (bitstream, code_to_symbol, meta)
+  │
+  ├── pickle.dump([(B_data), (G_data), (R_data)]) → photo_compressed.bin
+  │
+  └── Upload().upload(photo_compressed.bin, ...)
+        │
+        ├── boto3.upload_file() → MinIO s3://main-bucket/photo_compressed.bin
+        │
+        ├── SHA-256(file_bytes), PIL.Image.size → image record dict
+        │
+        ├── session.add(Image(...))  → PostgreSQL images row
+        ├── session.add(CompressionResult(...)) → PostgreSQL compression_results row
+        └── session.commit()
+
+      ▼
+Return dict: { image_id, phash, original_size, compressed_size, ratio }
+
+      ▼
+app/api/routes/jobs.py  [NOT WRITTEN]
+  └── GET /jobs/{job_id} → Celery task status → return to client
+```
+
+### Similarity Search Flow (intended — not wired)
+
+```
+User Action: GET /analysis/similar?image_id=abc123
+
+      ▼
+app/api/routes/analysis.py  [NOT WRITTEN]
+  ├── Fetch pHash for image_id from PostgreSQL phash_results table
+  │     [NOTE: this table doesn't exist yet]
+  │
+  ├── BKTree.search(phash, max_distance=5)
+  │     [NOTE: BKTree must be pre-built in memory at API startup]
+  │     │
+  │     ├── Start at root
+  │     ├── dist = phash_distance(query, root.phash)  [Hamming XOR + bit_count]
+  │     ├── If dist <= 5: add to results
+  │     └── For children: if child_dist in [dist-5, dist+5]: recurse
+  │
+  └── Return: [{ image_id, phash, hamming_distance }, ...]
+```
+
+### Compression Algorithm Deep Dive
+
+```
+Input: np.ndarray (H, W) uint8  e.g. 480×640
+
+STEP 1: Pad to multiple of 8
+  padded: (480, 640) if already multiple of 8, or e.g. (480, 640) → no change
+
+STEP 2: Per 8×8 block (H/8 × W/8 = 3,600 blocks for 480×640):
+  block = padded[i:i+8, j:j+8].astype(float32)
+  block -= 128.0                        # Level shift (center around 0)
+  dct_block = dct(dct(block, axis=0), axis=1)  # 2D DCT (separable)
+  qblock = round(dct_block / qmat)      # Quantize — kills high-freq detail
+  quantized[i:i+8, j:j+8] = qblock.astype(int16)
+
+  The JPEG quantization matrix at q_factor=24:
+    DC (top-left): 16*24=384  → large divisor, coarsest quantization
+    AC high-freq (bottom-right): ~99*24=2376 → very coarse, mostly zeros after rounding
+
+STEP 3: RLE encode flattened quantized array
+  Most values after quantization are 0 (high frequencies zeroed out)
+  RLE compresses long runs of zeros efficiently:
+  e.g.: [(0, 1847), (3, 1), (0, 204), (-1, 1), ...]
+
+STEP 4: Build Huffman code table
+  freq_table = Counter(rle_encoded)  # Count (value, run) pair occurrences
+  Build MinHeap of HuffmanNodes
+  While heap.length > 1:
+    left = heap.pop()   # lowest frequency
+    right = heap.pop()  # second lowest
+    parent = HuffmanNode(None, left.freq + right.freq)
+    parent.left = left; parent.right = right
+    heap.push(parent)
+  Walk tree: left → '0', right → '1' → assign bit codes
+
+STEP 5: Encode
+  bitstream = "".join(codes[symbol] for symbol in rle_encoded)
+  code_to_symbol = {code: symbol for symbol, code in codes.items()}
+
+Output: (bitstream: str, code_to_symbol: dict, meta: dict)
+```
+
+---
+
+## 6. API Documentation
+
+> **Status: The API is not implemented.** `app/api/main.py` contains placeholder code. Route files are empty stubs. This section documents the **intended** API.
+
+### Base URL
+`http://localhost:8000`
+
+### Endpoints (Intended)
+
+#### `POST /images/upload`
+Upload an image for processing.
+
+**Request:** `multipart/form-data`
+- `file`: Image file (PNG, JPEG, etc.)
+- `quantization_factor`: float, optional, default `24.0`
+
+**Response 202 Accepted:**
+```json
+{
+  "job_id": "abc123def456",
+  "status": "pending"
+}
+```
+
+**Response 200 OK (exact duplicate found):**
+```json
+{
+  "duplicate": true,
+  "image_id": "existing-image-id",
+  "similarity": "exact"
+}
+```
+
+---
+
+#### `GET /jobs/{job_id}`
+Poll the status of a processing job.
+
+**Response:**
+```json
+{
+  "job_id": "abc123",
+  "status": "completed",
+  "result": {
+    "image_id": "xyz789",
+    "phash": "a3f2e1d0c4b59876",
+    "original_size": 204800,
+    "compressed_size": 51200,
+    "compression_ratio": 0.25
+  }
+}
+```
+
+---
+
+#### `GET /analysis/similar`
+Find visually similar images.
+
+**Query params:**
+- `image_id`: string — reference image
+- `max_distance`: int, optional, default `5` — maximum Hamming distance (0–64)
+
+**Response:**
+```json
+[
+  { "image_id": "abc", "phash": "...", "distance": 2 },
+  { "image_id": "def", "phash": "...", "distance": 4 }
+]
+```
+
+---
+
+#### `GET /images/{image_id}`
+Retrieve metadata for a stored image.
+
+**Response:**
+```json
+{
+  "image_id": "xyz789",
+  "filename": "photo.jpg",
+  "stored_path": "s3://main-bucket/photo_compressed.bin",
+  "upload_timestamp": "2026-05-31T12:00:00",
+  "width": 640,
+  "height": 480,
+  "phash": "a3f2e1d0c4b59876",
+  "compression_ratio": 0.25
+}
+```
+
+---
+
+## 7. Database Documentation
+
+### Connection
+PostgreSQL 15, accessed via SQLAlchemy 2.0 with psycopg3 driver.
+
+**Connection string format:**
+```
+postgresql+psycopg://{user}:{password}@{host}:{port}/{db}
+```
+
+### Implemented Tables
+
+#### `images`
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `image_id` | VARCHAR | PRIMARY KEY | UUID hex string |
+| `filename` | VARCHAR | NOT NULL | |
+| `stored_path` | VARCHAR | NOT NULL | `s3://bucket/object` |
+| `upload_timestamp` | TIMESTAMP | NOT NULL, DEFAULT now() | |
+| `width` | INTEGER | NOT NULL | |
+| `height` | INTEGER | NOT NULL | |
+| `file_size` | INTEGER | NOT NULL | Bytes |
+| `sha256` | VARCHAR | NOT NULL, UNIQUE, INDEX | Enables exact dedup |
+
+#### `compression_results`
+
+| Column | Type | Constraints | Notes |
+|--------|------|-------------|-------|
+| `id` | INTEGER | PRIMARY KEY, AUTOINCREMENT | |
+| `image_id` | VARCHAR | FK → images.image_id, INDEX | |
+| `original_size` | INTEGER | NOT NULL | |
+| `compressed_size` | INTEGER | NOT NULL | |
+| `compression_ratio` | FLOAT | NOT NULL | `compressed / original` |
+| `metadata_json` | JSON | NOT NULL, DEFAULT `{}` | e.g. `{"q_factor": 24}` |
+| `created_at` | TIMESTAMP | NOT NULL, DEFAULT now() | |
+
+### Planned Tables (not yet implemented)
+
+#### `phash_results` (planned)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `image_id` | FK → images | |
+| `phash` | VARCHAR(16) | 64-bit hash as 16-char hex |
+| `computed_at` | TIMESTAMP | |
+
+#### `jobs` (planned)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `image_id` | FK → images (nullable) | Null while job pending |
+| `celery_task_id` | VARCHAR | Celery task UUID |
+| `status` | VARCHAR | `pending`, `running`, `completed`, `failed` |
+| `error_message` | TEXT | Null on success |
+| `created_at` | TIMESTAMP | |
+
+#### `similarity_results` (planned)
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `source_image_id` | FK → images | |
+| `matched_image_id` | FK → images | |
+| `hamming_distance` | INTEGER | 0–64 |
+| `created_at` | TIMESTAMP | |
+
+### Initialize Database
+
+```bash
+# Start Postgres first:
+docker-compose -f docker/docker-compose.yml up -d postgres
+
+# Create tables:
+python app/database/session.py
+```
+
+---
+
+## 8. Environment Variables
+
+Create a `.env` file at the repository root. The `.env.example` is currently empty — use the values below.
+
+```env
+# PostgreSQL (must match docker-compose.yml)
+POSTGRES_SERVER=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=vikas
+POSTGRES_PASSWORD=letmein
+POSTGRES_DB=postgres-algostore-daa
+
+# Redis (must match docker-compose.yml)
+REDIS_PORT=6379
+
+# MinIO (must match docker-compose.yml)
+MINIO_ENDPOINT=http://localhost:9000
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=daa-storages
+```
+
+> **Security note:** These defaults match the docker-compose.yml for local development only. All credentials should be rotated before any non-local deployment.
+
+---
+
+## 9. Dependencies
+
+Managed with `uv` (Python 3.13 required).
+
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `fastapi` | ≥0.135 | HTTP framework |
+| `uvicorn[standard]` | ≥0.41 | ASGI server |
+| `celery` | ≥5.6 | Distributed task queue |
+| `redis` | ≥7.3 | Redis client (Celery broker) |
+| `sqlalchemy` | ≥2.0 | ORM |
+| `psycopg[binary]` | ≥3.3 | PostgreSQL driver (psycopg3) |
+| `psycopg2` | ≥2.9 | Legacy PostgreSQL driver (also present) |
+| `alembic` | ≥1.18 | DB migration tool |
+| `boto3` | ≥1.42 | AWS S3 / MinIO client |
+| `numpy` | ≥2.4 | Numerical arrays |
+| `scipy` | ≥1.17 | DCT/IDCT implementation |
+| `opencv-python-headless` | ≥4.13 | Image read/write/resize/split |
+| `opencv-contrib-python` | ≥4.13 | Extended OpenCV (also present) |
+| `pillow` | ≥12.1 | Image dimension reading in upload service |
+| `pydantic` | ≥2.12 | Data validation |
+| `pydantic-settings` | ≥2.13 | Settings from environment |
+| `python-dotenv` | ≥1.2 | `.env` file loading |
+| `python-multipart` | ≥0.0.22 | File uploads in FastAPI |
+| `scikit-image` | 0.26 | Image processing utilities |
+| `graphviz` | latest | Visualization (not yet used) |
+| `httpx` | ≥0.28 | HTTP client (for testing) |
+
+**Dev dependencies:**
+- `ipykernel` — Jupyter notebook support
+
+---
+
+## 10. External Services
+
+### PostgreSQL 15 (`postgres-algostore-daa`)
+- **Role:** Stores all relational metadata — image records, compression results, future job/phash/similarity tables.
+- **Port:** 5432
+- **Run via:** `docker/docker-compose.yml`
+- **Data persisted in:** `postgres_data` Docker volume
+
+### Redis 7 (`celery-broker-redis`)
+- **Role:** Message broker between the FastAPI API and Celery worker. Stores the task queue.
+- **Port:** 6379
+- **Run via:** `docker/docker-compose.yml`
+- **Note:** Currently only used as a broker. No caching, pub/sub, or session storage.
+
+### MinIO (`minio-algostore-daa`)
+- **Role:** S3-compatible object storage. Stores compressed `.bin` blobs.
+- **Ports:** 9000 (S3 API), 9001 (Web Console)
+- **Console URL:** http://localhost:9001 (login: `minioadmin` / `daa-storages`)
+- **Run via:** `docker/docker-compose.yml`
+- **Data persisted in:** `minio_data` Docker volume
+- **Default bucket:** `main-bucket` (auto-created by `Upload._ensure_bucket()`)
+
+---
+
+## 11. Setup & Running the Project
+
+### A. Required Software
+
+| Software | Version | Install |
+|----------|---------|---------|
+| Python | 3.13 | [python.org](https://python.org) or pyenv |
+| uv | latest | `curl -LsSf https://astral.sh/uv/install.sh \| sh` |
+| Docker | latest | [docker.com](https://docker.com) |
+| Docker Compose | v2+ | Bundled with Docker Desktop |
+
+### B. First-Time Setup
+
+```bash
+# 1. Clone the repository
+git clone <repo-url>
+cd AlgoStore_DAA
+
+# 2. Create .env file
+cat > .env << 'EOF'
+POSTGRES_SERVER=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=vikas
+POSTGRES_PASSWORD=letmein
+POSTGRES_DB=postgres-algostore-daa
+REDIS_PORT=6379
+MINIO_ENDPOINT=http://localhost:9000
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=daa-storages
+EOF
+
+# 3. Install Python dependencies
+uv sync
+
+# 4. Start infrastructure services
+docker-compose -f docker/docker-compose.yml up -d
+
+# 5. Wait for services to be healthy (about 10–15 seconds), then verify
+python healthcheck.py
+
+# 6. Create database tables
+python app/database/session.py
+
+# 7. (Optional) Create assets directory and add a test image
+mkdir -p assets
+cp /path/to/any/image.png assets/test.png
+```
+
+### C. Run Commands
+
+```bash
+# Run the healthcheck
+python healthcheck.py
+
+# Run the compression visual test (requires assets/test.png)
+python app/tests/test_compression.py
+
+# Run the MinIO connectivity test
+python app/tests/test_minio.py
+
+# Run the Redis connectivity test
+python app/tests/test_redis_connection.py
+
+# Run the full integration test pipeline
+# (currently BROKEN due to missing retrieval_service.py)
+python app/tests/test_pipeline.py
+```
+
+### D. Start the API Server
+
+> Note: The API currently contains placeholder code. The following command starts it, but the real routes are not implemented.
+
+```bash
+uvicorn app.api.main:app --reload --port 8000
+```
+
+### E. Start the Celery Worker
+
+> Note: Fix the broker URL bug first (see Known Limitations).
+
+```bash
+celery -A app.worker worker --loglevel=info
+```
+
+### F. Stop Infrastructure
+
+```bash
+docker-compose -f docker/docker-compose.yml down
+
+# To also delete persisted data:
+docker-compose -f docker/docker-compose.yml down -v
+```
+
+### G. Test Commands
+
+There is no `pytest` configuration. Tests are run as standalone scripts:
+
+```bash
+python app/tests/test_minio.py
+python app/tests/test_redis_connection.py
+python app/tests/test_compression.py
+python app/tests/test_pipeline.py  # Requires all Docker services + fix of missing import
+```
+
+---
+
+## 12. Mermaid Diagrams
+
+### System Architecture
+
+```mermaid
+graph TB
+    Client["Client (HTTP)"]
+
+    subgraph API["FastAPI API  [STUB]"]
+        Upload["POST /images/upload"]
+        JobStatus["GET /jobs/:id"]
+        Similar["GET /analysis/similar"]
+    end
+
+    subgraph Workers["Celery Workers"]
+        Task["process_compressed_image()"]
+    end
+
+    subgraph Storage["Storage Layer"]
+        PG["PostgreSQL :5432\nimages\ncompression_results"]
+        Minio["MinIO :9000\nmain-bucket\n*.bin files"]
+    end
+
+    Redis["Redis :6379\nTask Queue"]
+
+    Client -->|HTTP POST file| Upload
+    Upload -->|Enqueue task| Redis
+    Redis -->|Dispatch| Task
+    Task -->|Write metadata| PG
+    Task -->|Upload .bin blob| Minio
+    JobStatus -->|Poll| Redis
+    Similar -->|Query| PG
+```
+
+### Backend Architecture
+
+```mermaid
+graph LR
+    subgraph Core["app/core — Algorithms"]
+        Comp["compression.py\nDCT + Huffman"]
+        PHash["phash.py\n64-bit pHash"]
+        BKT["similarity.py\nBK-Tree"]
+        SHA["exact_hash.py\nSHA-256 [STUB]"]
+    end
+
+    subgraph Utils["app/utils — Data Structures"]
+        Heap["heap.py\nMinHeap"]
+        RLE["rle.py\nRLE encode/decode"]
+    end
+
+    subgraph Services["app/services"]
+        UplSvc["upload_service.py\nUpload class"]
+        AnaSvc["analysis_service.py\n[STUB]"]
+        JobSvc["job_service.py\n[STUB]"]
+    end
+
+    subgraph Worker["app/worker"]
+        CelApp["celery_app.py\nCelery instance"]
+        Tasks["tasks.py\nprocess_compressed_image"]
+    end
+
+    subgraph DB["app/database"]
+        Models["models.py\nORM models"]
+        Conn["connection.py\nEngine + Session"]
+        Repos["repositories/\n[ALL STUBS]"]
+    end
+
+    Comp --> Heap
+    Tasks --> Comp
+    Tasks --> PHash
+    Tasks --> UplSvc
+    UplSvc --> Models
+    UplSvc --> Conn
+    BKT --> PHash
+    CelApp --> Tasks
+```
+
+### Database Relationships
+
+```mermaid
+erDiagram
+    images {
+        string image_id PK
+        string filename
+        string stored_path
+        datetime upload_timestamp
+        int width
+        int height
+        int file_size
+        string sha256 UK
+    }
+
+    compression_results {
+        int id PK
+        string image_id FK
+        int original_size
+        int compressed_size
+        float compression_ratio
+        json metadata_json
+        datetime created_at
+    }
+
+    phash_results {
+        int id PK
+        string image_id FK
+        string phash
+        datetime computed_at
+    }
+
+    jobs {
+        int id PK
+        string image_id FK
+        string celery_task_id
+        string status
+        string error_message
+        datetime created_at
+    }
+
+    similarity_results {
+        int id PK
+        string source_image_id FK
+        string matched_image_id FK
+        int hamming_distance
+        datetime created_at
+    }
+
+    images ||--o{ compression_results : "has"
+    images ||--o| phash_results : "has"
+    images ||--o{ jobs : "processed_by"
+    images ||--o{ similarity_results : "source"
+    images ||--o{ similarity_results : "matched"
+```
+
+> Tables in plain boxes are implemented. Tables with dashed borders (phash_results, jobs, similarity_results) are planned but not yet in models.py.
+
+### Request Flow (Upload)
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant API as FastAPI [STUB]
+    participant R as Redis
+    participant W as Celery Worker
+    participant M as MinIO
+    participant PG as PostgreSQL
+
+    C->>API: POST /images/upload (file)
+    API->>API: SHA-256 check in DB
+    alt Exact duplicate
+        API-->>C: 200 { duplicate: true, image_id }
+    else New image
+        API->>R: Enqueue task(image_path, q_factor)
+        API-->>C: 202 { job_id }
+        R->>W: Dispatch task
+        W->>W: cv2.imread()
+        W->>W: compute_phash()
+        W->>W: compress_image() ×3 channels
+        W->>W: pickle.dump() → .bin
+        W->>M: boto3.upload_file()
+        W->>PG: INSERT images
+        W->>PG: INSERT compression_results
+        W-->>R: Mark task complete
+        C->>API: GET /jobs/{job_id}
+        API->>R: Get task status
+        API-->>C: 200 { completed, image_id }
+    end
+```
+
+### Compression Algorithm Flow
+
+```mermaid
+flowchart TD
+    A["Input: 2D channel\n uint8 (H × W)"] --> B
+
+    subgraph DCT["DCT Quantization"]
+        B["Pad to 8×8 boundary"] --> C
+        C["Subtract 128\n(level shift)"] --> D
+        D["Per 8×8 block:\n2D DCT\n(separable, ortho)"] --> E
+        E["Divide by Qmat × q_factor\nRound → int16"] --> F
+        F["High-freq = 0\nLow-freq survives"]
+    end
+
+    subgraph Entropy["Entropy Coding"]
+        F --> G["Flatten → RLE encode\n[(val, count), ...]"]
+        G --> H["Count symbol frequencies\nCounter()"]
+        H --> I["Build Huffman tree\nvia MinHeap"]
+        I --> J["Assign bit codes\n(shorter = more frequent)"]
+        J --> K["Emit bitstream\n'01101001...'"]
+    end
+
+    K --> L["Output:\n(bitstream, code_to_symbol, meta)"]
+```
+
+### Similarity Search Flow (BK-Tree)
+
+```mermaid
+flowchart TD
+    Q["Query pHash\n'a3f2e1d0c4b59876'"] --> R
+
+    R["BKTree.search(query, max_dist=5)"]
+    R --> S["candidates = [root]"]
+    S --> T["Pop node from candidates"]
+    T --> U["dist = Hamming(query, node.phash)\n= popcount(XOR of hex values)"]
+    U --> V{dist ≤ max_dist?}
+    V -- Yes --> W["Add node.image_ids to results"]
+    V -- No --> X
+    W --> X
+
+    X["For each child at distance d:\nif dist-5 ≤ d ≤ dist+5\nadd child to candidates\n(triangle inequality prune)"]
+    X --> Y{More candidates?}
+    Y -- Yes --> T
+    Y -- No --> Z["Sort results by distance\nReturn [(dist, phash, image_id)]"]
+```
+
+### Deployment Architecture (Target)
+
+```mermaid
+graph TB
+    subgraph Host["Development Machine / Server"]
+        subgraph DC["docker-compose"]
+            PG["postgres:15\nport 5432"]
+            R["redis:7\nport 6379"]
+            M["minio/minio\nport 9000/9001"]
+        end
+
+        subgraph App["Application Processes (not containerized yet)"]
+            API["uvicorn app.api.main:app\nport 8000"]
+            W["celery -A app.worker worker"]
+        end
+    end
+
+    API <-->|SQLAlchemy| PG
+    API <-->|redis-py| R
+    W <-->|SQLAlchemy| PG
+    W <-->|boto3 S3| M
+    W <-->|redis-py| R
+
+    Browser["Browser / API Client"] -->|HTTP| API
+```
+
+---
+
+## 13. Known Limitations & Bugs
+
+### Critical Bugs (prevent operation)
+
+| # | File | Line | Issue | Fix |
+|---|------|------|-------|-----|
+| 1 | `app/worker/celery_app.py` | 7 | Broker URL uses `http://` instead of `redis://`. Worker cannot connect. | Change to `f"redis://localhost:{os.getenv('REDIS_PORT', '6379')}"` |
+| 2 | `app/tests/test_pipeline.py` | 19 | Imports `retrieval_service.Retrieval` which does not exist. All tests fail at import. | Create `app/services/retrieval_service.py` |
+| 3 | `app/database/connection.py` | 13 | Default DB name is `"ai_news_aggregator"` (wrong project). | Change to `"postgres-algostore-daa"` |
+| 4 | `healthcheck.py` | 58–59 | Queries `"Image"` and `"CompressionResult"` — table names don't exist. Actual names: `images`, `compression_results`. | Use lowercase table names |
+| 5 | `app/database/models.py` | 9 | `User.__tablename__ = "User profile"` — space in table name. | Change to `"users"` |
+
+### Structural Gaps
+
+| Missing Component | Where | Impact |
+|-------------------|-------|--------|
+| `retrieval_service.py` | `app/services/` | Cannot decompress/retrieve stored images |
+| `exact_hash.py` implementation | `app/core/` | No SHA-256 deduplication at upload time |
+| `analysis_service.py` | `app/services/` | BK-Tree never queried from API |
+| `job_service.py` | `app/services/` | No job status tracking |
+| All route files | `app/api/routes/` | API accepts no real requests |
+| All schema files | `app/api/schemas/` | No Pydantic validation on requests/responses |
+| All repository files | `app/database/repositories/` | No data access layer |
+| `phash_results` DB table | `app/database/models.py` | pHash not persisted |
+| `jobs` DB table | `app/database/models.py` | Task status not tracked |
+| `similarity_results` DB table | `app/database/models.py` | Similarity results not persisted |
+| API Dockerfiles | `docker/` | App cannot be containerized |
+| BK-Tree database bridge | Anywhere | Tree only exists in-memory; not populated from DB |
+| `.env.example` content | Root | New developer cannot set up without reading docs |
+| `assets/test.png` | Root | Compression test fails without this file |
+
+### Design Limitations
+
+- **Bitstream as string:** The compressed bitstream is stored as a Python string of `'0'` and `'1'` characters. A 512×512 image produces a ~20MB string before Huffman compression. Production systems would use packed bytes (`bitarray` or `bytearray`).
+- **Two RLE implementations:** `app/utils/rle.py` and `Huffman.rle_encode()` in `compression.py` are functionally identical but independent. The utils version returns `uint8`, the compression version uses `int16`. This inconsistency could cause bugs if the wrong one is used.
+- **Two Heap implementations:** `heap.py` contains both a clean `MinHeap` class and a legacy array-based `Heap` with free functions. The legacy code is dead code.
+- **Credentials hardcoded:** MinIO credentials appear in `upload_service.py`, `healthcheck.py`, and test files. Must be moved to environment variables.
+- **BK-Tree is ephemeral:** No code populates the BK-Tree from the database or serializes it between runs.
+- **No authentication:** The API has no authentication or authorization.
+- **Single-node only:** No horizontal scaling consideration — BK-Tree is per-process.
+
+---
+
+## 14. Future Work
+
+### Immediate (unblock testing)
+
+1. Fix broker URL bug in `app/worker/celery_app.py`
+2. Create `app/services/retrieval_service.py` with `Retrieval.get_image_metadata()` and `Retrieval.download_and_decompress()`
+3. Fix table name fallbacks and healthcheck queries
+4. Populate `.env.example` with documented defaults
+
+### Short-term (complete the backend)
+
+5. Add `phash_results`, `jobs`, `similarity_results` ORM models
+6. Implement database repositories (thin SQLAlchemy query wrappers)
+7. Implement `exact_hash.py` — SHA-256 lookup before enqueuing Celery task
+8. Implement `analysis_service.py` — load BK-Tree from DB at startup, expose search
+9. Implement `job_service.py` — create/track Celery jobs in the `jobs` table
+10. Rewrite `app/api/main.py` — remove placeholder code, register real routers
+11. Implement all route files with proper Pydantic schemas
+
+### Medium-term (production readiness)
+
+12. Move all credentials to environment variables (no hardcoded strings)
+13. Write `api.Dockerfile` and `worker.Dockerfile`
+14. Replace bitstream string with packed bytes (`bitarray`) — reduces memory 8×
+15. Add Alembic migrations for schema changes
+16. Add pHash to the upload flow (compute → store in `phash_results` → add to BK-Tree)
+17. Add BK-Tree serialization/deserialization for persistence across restarts
+18. Write proper pytest tests with fixtures (current tests are integration scripts)
+
+### Long-term (algorithmic improvements)
+
+19. Implement zigzag coefficient ordering in DCT compression (noted in migration docs but not coded)
+20. Implement DC differential coding (smaller DC bitstreams)
+21. Implement chroma subsampling for color images (reduce color resolution as JPEG does)
+22. Implement `similarity_results` caching — avoid recomputing pair distances
+23. Evaluate Locality-Sensitive Hashing (LSH) as an alternative or complement to BK-Tree for very large collections
