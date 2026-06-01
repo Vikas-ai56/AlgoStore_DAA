@@ -1,0 +1,53 @@
+============================================================
+AlgoStore Compression Pipeline - Integration Tests
+============================================================
+
+--- Checking External Services ---
+✓ Redis connected successfully
+✓ MinIO connected successfully (bucket: main-bucket)
+✓ Database tables created successfully
+
+--- Running Core Tests ---
+
+--- Testing Compression/Decompression ---
+  Original bits: 32768
+  Compressed bits: 192
+  Compression ratio: 0.59%
+✓ Compression/Decompression successful
+
+--- Testing Serialization ---
+✓ Serialization successful
+
+--- Testing MinIO Upload ---
+✓ Created test image: /home/vikas/AlgoStore_DAA/assets/minio_test.png
+✓ File uploaded to MinIO
+  Image ID: 6e6381ac94a14806871d73320c63f189
+  Stored path: None
+
+--- Testing Database Storage ---
+✗ Database storage test failed: (psycopg.errors.UniqueViolation) duplicate key value violates unique constraint "ix_images_sha256"
+DETAIL:  Key (sha256)=(abc123def456) already exists.
+[SQL: INSERT INTO images (image_id, filename, stored_path, upload_timestamp, width, height, file_size, sha256) VALUES (%(image_id)s::VARCHAR, %(filename)s::VARCHAR, %(stored_path)s::VARCHAR, %(upload_timestamp)s::TIMESTAMP WITHOUT TIME ZONE, %(width)s::INTEGER, %(height)s::INTEGER, %(file_size)s::INTEGER, %(sha256)s::VARCHAR)]
+[parameters: {'image_id': 'test-id-d6fb175a3a0a422aab5bed0bb347f079', 'filename': 'test.bin', 'stored_path': 's3://bucket/test.bin', 'upload_timestamp': datetime.datetime(2026, 5, 9, 6, 6, 35, 248745), 'width': 100, 'height': 100, 'file_size': 5120, 'sha256': 'abc123def456'}]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+
+--- Testing Worker Task (Sync Mode) ---
+✓ Created test image: /home/vikas/AlgoStore_DAA/assets/worker_test.png
+✓ Worker task executed successfully
+  Original size: 30209 bytes
+  Compressed size: 6030 bytes
+  Compression ratio: 19.96%
+  phash: 0b0001010101
+
+--- Testing End-to-End Pipeline ---
+✓ Created test image: /home/vikas/AlgoStore_DAA/assets/e2e_test.png
+  ✓ Image uploaded (ID: edb77b16bf04464f8e6793d0a857c856)
+  ✓ Metadata retrieved: e2e_test_compressed.bin
+Decompressed image saved: /home/vikas/AlgoStore_DAA/assets/e2e_decompressed.png
+✓ Decompressed image shape matches original: (100, 100, 3)
+✓ End-to-end pipeline successful!
+
+============================================================
+Results: 5 passed, 1 failed out of 6 tests
+============================================================
+✗ 1 test(s) failed
