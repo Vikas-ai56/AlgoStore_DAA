@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import os
 from pathlib import Path
 from uuid import uuid4
 
@@ -17,11 +18,13 @@ load_dotenv(override=True)
 
 class Upload:
     def __init__(self, bucket: str = "main-bucket"):
+        minio_host = os.getenv("MINIO_SERVER", "localhost")
+        minio_port = os.getenv("MINIO_PORT", "9000")
         self.client = boto3.client(
             "s3",
-            endpoint_url="http://localhost:9000",
-            aws_access_key_id="minioadmin",
-            aws_secret_access_key="daa-storages",
+            endpoint_url=f"http://{minio_host}:{minio_port}",
+            aws_access_key_id=os.getenv("MINIO_ROOT_USER", "minioadmin"),
+            aws_secret_access_key=os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"),
             config=Config(signature_version="s3v4"),
             region_name="us-east-1",
         )

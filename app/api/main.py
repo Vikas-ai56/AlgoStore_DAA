@@ -1,99 +1,47 @@
-from fastapi import FastAPI, Query, Path, Body, Request
-import time
-from pydantic import BaseModel, Field
-from typing import Literal, Annotated
+from contextlib import asynccontextmanager
 
-app = FastAPI()
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
-@app.get("/")
+from app.api.routes import images, jobs, analysis
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: nothing blocking yet (BKTree rehydration will go here in Phase 3)
+    yield
+    # Shutdown cleanup placeholder
+
+
+app = FastAPI(
+    title="AlgoStore DAA",
+    description="Image compression pipeline — DCT + RLE + Huffman, pHash, BKTree similarity, MinIO storage.",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(images.router, prefix="/api/images", tags=["images"])
+app.include_router(jobs.router,   prefix="/api/jobs",   tags=["jobs"])
+app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
+
+
+@app.get("/", tags=["health"])
 async def root():
-    # Give an intro to the project if needed
-    return {"message": "MelodyCloud \n this is a audio storage platform which stores etc etc"}
-
-@app.get("/upload")
-async def upload(file_object:str):
-    # call the function to upload
-    return {"detail":f"Just return the file {file_object} is being uploaded"}
+    return {
+        "project": "AlgoStore DAA",
+        "description": "Custom image compression (DCT+RLE+Huffman) with MinIO storage, pHash similarity, and real-time Celery pipeline.",
+        "docs": "/docs",
+    }
 
 
-
-
-
-
-class Item(BaseModel):
-    name: str
-    description: str | None = None
-    price: float
-    tax: float | None = None
-
-fake_items_db = [{"item_name": "Foo"}, {"item_name": "Bar"}, {"item_name": "Baz"}]
-
-
-
-class FilterParams(BaseModel):
-    limit: int = Field(100, gt=0, le=100)
-    offset: int = Field(0, ge=0)
-    order_by: Literal["created_at", "updated_at"] = "created_at"
-    tags: list[str] = []
-
-
-@app.get("/items/")
-async def read_items(filter_query: Annotated[FilterParams, Query()]):
-    return filter_query
-
-@app.get("/events/")
-async def trigger_event(event_name:str=None):
-    return {"Current event" : event_name}
-
-@app.get("/fakeDB/")
-async def read_item(item: Item):
-    return item
-
-@app.put("/nitems/{item_id}")
-async def update_item(
-    *,
-    item_id: int,
-    item: Annotated[
-        Item,
-        Body(
-            openapi_examples={
-                "normal": {
-                    "summary": "A normal example",
-                    "description": "A **normal** item works correctly.",
-                    "value": {
-                        "name": "Foo",
-                        "description": "A very nice Item",
-                        "price": 35.4,
-                        "tax": 3.2,
-                    },
-                },
-                "converted": {
-                    "summary": "An example with converted data",
-                    "description": "FastAPI can convert price `strings` to actual `numbers` automatically",
-                    "value": {
-                        "name": "Bar",
-                        "price": "35.4",
-                    },
-                },
-                "invalid": {
-                    "summary": "Invalid data is rejected with an error",
-                    "value": {
-                        "name": "Baz",
-                        "price": "thirty five point four",
-                    },
-                },
-            },
-        ),
-    ],
-):
-    results = {"item_id": item_id, "item": item}
-    return results
-
-
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.perf_counter()
-    response = await call_next(request)
-    process_time = time.perf_counter() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
+@app.get("/health", tags=["health"])
+async def health():
+    return {"status": "ok"}

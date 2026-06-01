@@ -10,7 +10,7 @@ def get_database_url() -> str:
     password = os.getenv("POSTGRES_PASSWORD", "letmein")
     host = os.getenv("POSTGRES_SERVER", "localhost")
     port = os.getenv("POSTGRES_PORT", "5432")
-    db = os.getenv("POSTGRES_DB", "ai_news_aggregator")
+    db = os.getenv("POSTGRES_DB", "algostore")
     return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
 
 engine = create_engine(get_database_url())
