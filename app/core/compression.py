@@ -23,6 +23,18 @@ class HuffmanNode:
         return self.frequency > other.frequency
 
 
+def _huffman_tree_to_dict(node):
+    """Recursively serialize a HuffmanNode tree to a JSON-safe dict."""
+    if node is None:
+        return None
+    return {
+        "symbol": node.value,
+        "freq": node.frequency,
+        "left": _huffman_tree_to_dict(node.left),
+        "right": _huffman_tree_to_dict(node.right),
+    }
+
+
 class Huffman:
     def __init__(self):
         self.tree = None
@@ -182,7 +194,7 @@ def dct_dequantize_reconstruct(quantized, orig_shape, padded_shape, q_factor=1.0
     return recon[:h, :w]
 
 
-def compress_image(channel, quantization_factor=24):
+def compress_image(channel, quantization_factor=24, capture_steps=False):
     huffman = Huffman()
 
     if channel.ndim == 3:
@@ -190,6 +202,7 @@ def compress_image(channel, quantization_factor=24):
     elif channel.ndim != 2:
         raise ValueError(f"Unsupported input shape: {channel.shape}. Expected 2D or 3D image.")
 
+    gray = channel.copy()
     quantized, orig_shape, padded_shape = dct_quantize_image(channel, q_factor=quantization_factor)
 
     rle_encoded = huffman.rle_encode(quantized)
@@ -197,7 +210,10 @@ def compress_image(channel, quantization_factor=24):
     codes = huffman.huffman_encode(freq_table)
 
     if not codes:
-        return "", {}, {"orig_shape": orig_shape, "padded_shape": padded_shape, "q_factor": quantization_factor}
+        empty_meta = {"orig_shape": orig_shape, "padded_shape": padded_shape, "q_factor": quantization_factor}
+        if capture_steps:
+            return "", {}, empty_meta, {}
+        return "", {}, empty_meta
 
     bitstream = "".join(codes[symbol] for symbol in rle_encoded)
     code_to_symbol = {code: symbol for symbol, code in codes.items()}
@@ -207,7 +223,24 @@ def compress_image(channel, quantization_factor=24):
         "padded_shape": padded_shape,
         "q_factor": quantization_factor,
     }
-    return bitstream, code_to_symbol, meta
+
+    if not capture_steps:
+        return bitstream, code_to_symbol, meta
+
+    reconstructed = dct_dequantize_reconstruct(quantized, orig_shape, padded_shape, q_factor=quantization_factor)
+
+    steps = {
+        "gray": gray,
+        "quantized_dct": quantized,
+        "rle_preview": rle_encoded[:200],
+        "rle_total_pairs": len(rle_encoded),
+        "freq_table": {str(k): v for k, v in freq_table.most_common(50)},
+        "huffman_codes": {str(k): v for k, v in codes.items()},
+        "huffman_tree": _huffman_tree_to_dict(huffman.tree),
+        "bitstream_length": len(bitstream),
+        "reconstructed": reconstructed,
+    }
+    return bitstream, code_to_symbol, meta, steps
 
 
 def decompress_image(bitstream, code_to_symbol, meta):

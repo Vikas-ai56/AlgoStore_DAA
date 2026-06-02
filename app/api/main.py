@@ -8,7 +8,7 @@ app = FastAPI()
 @app.get("/")
 async def root():
     # Give an intro to the project if needed
-    return {"message": "MelodyCloud \n this is a audio storage platform which stores etc etc"}
+    return {"message": "AlgoStore \nthis is a image storage platform which compresses and stores images"}
 
 @app.get("/upload")
 async def upload(file_object:str):

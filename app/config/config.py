@@ -20,12 +20,12 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    POSTGRES_SERVER: str = os.getenv("POSTGRES_SERVER")
-    POSTGRES_PORT: int = os.getenv("POSTGRES_PORT")
-    POSTGRES_USER: str = os.getenv("POSTGRES_USER")
-    POSTGRES_PASSWORD: str = os.getenv("POSTGRES_PASSWORD")
+    POSTGRES_SERVER: str = "localhost"
+    POSTGRES_PORT: int = 5432
+    POSTGRES_USER: str = "vikas"
+    POSTGRES_PASSWORD: str | None = None
     POSTGRES_PASSWORD_FILE: str | None = None
-    POSTGRES_DB: str = os.getenv("POSTGRES_DB")
+    POSTGRES_DB: str = "postgres-algostore-daa"
 
     @model_validator(mode="before")
     @classmethod
