@@ -13,3 +13,13 @@ app = Celery(
     result_backend=REDIS_URL,
 )
 
+app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    timezone="UTC",
+    enable_utc=True,
+    # Keep results long enough for the frontend to poll after a page refresh
+    result_expires=3600,
+)
+

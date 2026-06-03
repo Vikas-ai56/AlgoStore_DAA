@@ -1,67 +1,61 @@
 from fastapi import APIRouter
-from celery.result import AsyncResult
 
-from app.worker.celery_app import app as celery_app
+from app.api.schemas.job import JobPollResponse
+from app.services.job_service import cancel_job, get_job_status
 
 router = APIRouter()
 
 
-@router.get("/jobs/{task_id}")
-async def get_job_status(task_id: str):
+@router.get("/jobs/{task_id}", response_model=JobPollResponse)
+async def poll_job(task_id: str):
     """
-    Poll the Celery result backend for a task's current state and return a
-    shape that matches the frontend's JobPollResponse type:
-      { job_id, status, progress, current_stage, error_traceback?, payload? }
+    Poll the Celery result backend for a task's state.
 
-    Celery state → frontend status mapping:
-      PENDING  → PENDING   (task queued, not yet picked up by a worker)
-      STARTED  → STARTED   (worker picked it up, no progress update yet)
-      PROGRESS → STARTED   (worker is mid-execution; use progress meta)
-      SUCCESS  → SUCCESS   (result.result contains ProfilerDataset)
-      FAILURE  → FAILURE   (result.result is the exception)
+    Status lifecycle: PENDING → STARTED → (PROGRESS updates) → SUCCESS | FAILURE
+
+    On SUCCESS the response includes `payload` — a ProfilerDataset with all
+    8 algorithm steps for all 3 YCbCr channels, ready for the frontend visualizer.
     """
-    result = AsyncResult(task_id, app=celery_app)
-    state = result.state
+    raw = get_job_status(task_id)
+
+    # Map job_service's shape to the frontend's JobPollResponse contract
+    state = raw["status"]
 
     if state == "PENDING":
-        return {
-            "job_id": task_id,
-            "status": "PENDING",
-            "progress": 0,
-            "current_stage": "Queued",
-        }
+        return JobPollResponse(job_id=task_id, status="PENDING", progress=0, current_stage="Queued")
 
     if state in ("STARTED", "RECEIVED"):
-        return {
-            "job_id": task_id,
-            "status": "STARTED",
-            "progress": 0,
-            "current_stage": "Starting",
-        }
+        return JobPollResponse(job_id=task_id, status="STARTED", progress=0, current_stage="Starting")
 
     if state == "PROGRESS":
-        meta = result.info or {}
-        return {
-            "job_id": task_id,
-            "status": "STARTED",
-            "progress": meta.get("progress", 0),
-            "current_stage": meta.get("label", "Processing"),
-        }
+        meta = raw.get("progress") or {}
+        return JobPollResponse(
+            job_id=task_id,
+            status="STARTED",
+            progress=meta.get("progress", 0),
+            current_stage=meta.get("label", "Processing"),
+        )
 
     if state == "SUCCESS":
-        return {
-            "job_id": task_id,
-            "status": "SUCCESS",
-            "progress": 100,
-            "current_stage": "Complete",
-            "payload": result.result,
-        }
+        return JobPollResponse(
+            job_id=task_id,
+            status="SUCCESS",
+            progress=100,
+            current_stage="Complete",
+            payload=raw.get("result"),
+        )
 
-    # FAILURE, REVOKED, or anything else
-    return {
-        "job_id": task_id,
-        "status": "FAILURE",
-        "progress": 0,
-        "current_stage": "Failed",
-        "error_traceback": str(result.result) if result.result else state,
-    }
+    # FAILURE, REVOKED, or unknown
+    return JobPollResponse(
+        job_id=task_id,
+        status="FAILURE",
+        progress=0,
+        current_stage="Failed",
+        error_traceback=raw.get("error", state),
+    )
+
+
+@router.delete("/jobs/{task_id}")
+async def revoke_job(task_id: str):
+    """Cancel a pending or running task."""
+    return cancel_job(task_id)
