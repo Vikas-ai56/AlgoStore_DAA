@@ -40,7 +40,7 @@ export default function Step7CodeTable({ payload, theme }: Props) {
 
   const SortIcon = ({ col }: { col: SortKey }) => {
     if (sortKey !== col) return <ArrowUpDown size={11} color={dark ? '#3f3f46' : '#d4d4d8'} />;
-    return sortDir === 'asc' ? <ArrowUp size={11} color="#f59e0b" /> : <ArrowDown size={11} color="#f59e0b" />;
+    return sortDir === 'asc' ? <ArrowUp size={11} color="#2563eb" /> : <ArrowDown size={11} color="#2563eb" />;
   };
 
   const colHdr = (label: string, col: SortKey | null) => (
@@ -49,7 +49,7 @@ export default function Step7CodeTable({ payload, theme }: Props) {
       style={{
         padding: '8px 12px',
         textAlign: 'left',
-        fontFamily: '"JetBrains Mono", monospace',
+        fontFamily: "'JetBrains Mono', monospace",
         fontSize: 9,
         letterSpacing: '0.12em',
         color: dark ? '#52525b' : '#a1a1aa',
@@ -72,24 +72,22 @@ export default function Step7CodeTable({ payload, theme }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: 16, gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#a1a1aa' : '#71717a' }}>
-          Huffman Code Table — {sorted.length} entries
+        <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
+          Huffman code table —
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", marginLeft: 5 }}>{sorted.length}</span>
+          {' '}entries
         </span>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
           {Array.from({ length: pages }, (_, i) => (
-            <button
-              key={i}
-              onClick={() => setPage(i)}
-              style={{
-                width: 28, height: 24,
-                border: `1px solid ${i === page ? '#f59e0b' : bd}`,
-                borderRadius: 3,
-                background: i === page ? (dark ? '#2d1f00' : '#fffbeb') : (dark ? '#18181b' : '#fff'),
-                color: i === page ? '#f59e0b' : (dark ? '#71717a' : '#a1a1aa'),
-                fontFamily: '"JetBrains Mono", monospace',
-                fontSize: 10, cursor: 'pointer',
-              }}
-            >
+            <button key={i} onClick={() => setPage(i)} style={{
+              width: 28, height: 24,
+              border: `1px solid ${i === page ? (dark ? '#3b82f6' : '#2563eb') : bd}`,
+              borderRadius: 4,
+              background: i === page ? (dark ? '#0c1a3a' : '#eff6ff') : 'transparent',
+              color: i === page ? (dark ? '#60a5fa' : '#2563eb') : (dark ? '#71717a' : '#94a3b8'),
+              fontFamily: "'JetBrains Mono', monospace",
+              fontSize: 10, cursor: 'pointer',
+            }}>
               {i + 1}
             </button>
           ))}
@@ -122,15 +120,15 @@ export default function Step7CodeTable({ payload, theme }: Props) {
               >
                 <td style={{
                   padding: '7px 12px',
-                  fontFamily: '"JetBrains Mono", monospace',
+                  fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 12, fontWeight: 600,
-                  color: dark ? '#f59e0b' : '#d97706',
+                  color: dark ? '#e4e4e7' : '#334155',
                 }}>
                   {row.symbol}
                 </td>
                 <td style={{
                   padding: '7px 12px',
-                  fontFamily: '"JetBrains Mono", monospace',
+                  fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 11,
                   color: dark ? '#60a5fa' : '#2563eb',
                   letterSpacing: '0.12em',
@@ -143,7 +141,7 @@ export default function Step7CodeTable({ payload, theme }: Props) {
                 </td>
                 <td style={{
                   padding: '7px 12px',
-                  fontFamily: '"JetBrains Mono", monospace',
+                  fontFamily: "'JetBrains Mono', monospace",
                   fontSize: 11,
                   color: dark ? '#e4e4e7' : '#27272a',
                 }}>
@@ -158,7 +156,7 @@ export default function Step7CodeTable({ payload, theme }: Props) {
                       borderRadius: 2,
                     }} />
                     <span style={{
-                      fontFamily: '"JetBrains Mono", monospace',
+                      fontFamily: "'JetBrains Mono', monospace",
                       fontSize: 9, color: dark ? '#52525b' : '#a1a1aa',
                     }}>
                       {((1 / row.length) * 100).toFixed(0)}%
@@ -174,19 +172,23 @@ export default function Step7CodeTable({ payload, theme }: Props) {
       {/* Stats bar */}
       <div style={{
         display: 'flex', gap: 20,
-        fontFamily: '"JetBrains Mono", monospace',
+        fontFamily: "'JetBrains Mono', monospace",
         fontSize: 11,
       }}>
-        <span style={{ color: dark ? '#a1a1aa' : '#71717a' }}>
-          avg length: <span style={{ color: dark ? '#e4e4e7' : '#18181b' }}>
-            {(sorted.reduce((a, r) => a + r.length, 0) / sorted.length).toFixed(2)} bits
+        <span style={{ fontSize: 11, color: dark ? '#71717a' : '#94a3b8' }}>
+          avg <span style={{ fontFamily: "'JetBrains Mono', monospace", color: dark ? '#e4e4e7' : '#334155' }}>
+            {(sorted.reduce((a, r) => a + r.length, 0) / sorted.length).toFixed(2)}b
           </span>
         </span>
-        <span style={{ color: dark ? '#a1a1aa' : '#71717a' }}>
-          min: <span style={{ color: '#10b981' }}>{Math.min(...sorted.map((r) => r.length))}b</span>
+        <span style={{ fontSize: 11, color: dark ? '#71717a' : '#94a3b8' }}>
+          min <span style={{ fontFamily: "'JetBrains Mono', monospace", color: dark ? '#e4e4e7' : '#334155' }}>
+            {Math.min(...sorted.map((r) => r.length))}b
+          </span>
         </span>
-        <span style={{ color: dark ? '#a1a1aa' : '#71717a' }}>
-          max: <span style={{ color: '#ef4444' }}>{Math.max(...sorted.map((r) => r.length))}b</span>
+        <span style={{ fontSize: 11, color: dark ? '#71717a' : '#94a3b8' }}>
+          max <span style={{ fontFamily: "'JetBrains Mono', monospace", color: dark ? '#e4e4e7' : '#334155' }}>
+            {Math.max(...sorted.map((r) => r.length))}b
+          </span>
         </span>
       </div>
     </div>

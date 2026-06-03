@@ -68,7 +68,7 @@ export default function Step6Huffman({ payload, theme }: Props) {
       .attr('class', 'huffman-edge')
       .attr('d', linkGen as any)
       .attr('fill', 'none')
-      .attr('stroke', dark ? '#3f3f46' : '#d4d4d8')
+      .attr('stroke', dark ? '#3f3f46' : '#cbd5e1')
       .attr('stroke-width', 1.5);
 
     // Edge labels (0/1)
@@ -79,7 +79,7 @@ export default function Step6Huffman({ payload, theme }: Props) {
       .attr('x', (d: any) => (d.source.x + d.target.x) / 2)
       .attr('y', (d: any) => (d.source.y + d.target.y) / 2 - 3)
       .attr('text-anchor', 'middle')
-      .attr('font-family', '"JetBrains Mono", monospace')
+      .attr('font-family', "'JetBrains Mono', monospace")
       .attr('font-size', 9)
       .attr('fill', dark ? '#52525b' : '#a1a1aa')
       .text((d: any) => {
@@ -102,7 +102,7 @@ export default function Step6Huffman({ payload, theme }: Props) {
       })
       .attr('stroke', (d) => {
         if (d.data.symbol !== undefined && !d.children) return '#3b82f6';
-        return dark ? '#3f3f46' : '#d4d4d8';
+        return dark ? '#3f3f46' : '#cbd5e1';
       })
       .attr('stroke-width', (d) => (d.data.symbol !== undefined && !d.children ? 1.5 : 1));
 
@@ -111,7 +111,7 @@ export default function Step6Huffman({ payload, theme }: Props) {
       .append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
-      .attr('font-family', '"JetBrains Mono", monospace')
+      .attr('font-family', "'JetBrains Mono', monospace")
       .attr('font-size', 9)
       .attr('font-weight', 600)
       .attr('fill', '#60a5fa')
@@ -122,7 +122,7 @@ export default function Step6Huffman({ payload, theme }: Props) {
       .append('text')
       .attr('text-anchor', 'middle')
       .attr('dy', '0.35em')
-      .attr('font-family', '"JetBrains Mono", monospace')
+      .attr('font-family', "'JetBrains Mono', monospace")
       .attr('font-size', 8)
       .attr('fill', dark ? '#71717a' : '#a1a1aa')
       .text((d) => d.data.freq);
@@ -143,7 +143,7 @@ export default function Step6Huffman({ payload, theme }: Props) {
           .attr('stroke', (link: any) => {
             return ancestors.has(link.source.data) && ancestors.has(link.target.data)
               ? '#3b82f6'
-              : (dark ? '#3f3f46' : '#d4d4d8');
+              : (dark ? '#3f3f46' : '#cbd5e1');
           })
           .attr('stroke-width', (link: any) =>
             ancestors.has(link.source.data) && ancestors.has(link.target.data) ? 2.5 : 1.5
@@ -167,14 +167,14 @@ export default function Step6Huffman({ payload, theme }: Props) {
         setHoveredSymbol(null);
         setHoveredBits(null);
         g.selectAll('path.huffman-edge')
-          .attr('stroke', dark ? '#3f3f46' : '#d4d4d8')
+          .attr('stroke', dark ? '#3f3f46' : '#cbd5e1')
           .attr('stroke-width', 1.5);
         g.selectAll('text.edge-label')
           .attr('fill', dark ? '#52525b' : '#a1a1aa')
           .attr('font-size', 9);
         nodes.selectAll('circle')
           .attr('stroke', (d: any) =>
-            d.data.symbol !== undefined && !d.children ? '#3b82f6' : (dark ? '#3f3f46' : '#d4d4d8')
+            d.data.symbol !== undefined && !d.children ? '#3b82f6' : (dark ? '#3f3f46' : '#cbd5e1')
           )
           .attr('fill', (d: any) =>
             d.data.symbol !== undefined && !d.children
@@ -191,52 +191,45 @@ export default function Step6Huffman({ payload, theme }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 0, height: '100%', overflow: 'hidden' }}>
       {/* Info bar */}
       <div style={{
-        padding: '10px 16px',
+        padding: '9px 16px',
         borderBottom: `1px solid ${bd}`,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 20,
+        display: 'flex', alignItems: 'center', gap: 16,
         flexShrink: 0,
-        background: dark ? '#0d0d0f' : '#f8f8f8',
+        background: dark ? '#0d0d0f' : '#f8fafc',
       }}>
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#a1a1aa' : '#71717a' }}>
-          Huffman Tree — {Object.keys(bits).length} symbols — hover leaf to trace
+        <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
+          Huffman tree —
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", marginLeft: 5 }}>{Object.keys(bits).length}</span>
+          {' '}symbols
         </span>
         {hoveredSymbol !== null && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{
-              fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
-              padding: '2px 10px',
-              background: dark ? '#2d1f00' : '#fffbeb',
-              border: `1px solid #f59e0b`,
-              borderRadius: 3, color: '#f59e0b',
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+              padding: '2px 9px',
+              background: dark ? '#0a1929' : '#eff6ff',
+              border: `1px solid ${dark ? '#1d3a4a' : '#bfdbfe'}`,
+              borderRadius: 4, color: dark ? '#60a5fa' : '#2563eb',
             }}>
-              sym: {hoveredSymbol}
+              {hoveredSymbol}
             </span>
             <span style={{
-              fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
-              padding: '2px 10px',
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 11,
+              padding: '2px 9px',
               background: dark ? '#0a1929' : '#eff6ff',
-              border: `1px solid #3b82f6`,
-              borderRadius: 3, color: '#60a5fa',
+              border: `1px solid ${dark ? '#1d3a4a' : '#bfdbfe'}`,
+              borderRadius: 4, color: dark ? '#60a5fa' : '#2563eb',
               letterSpacing: '0.15em',
             }}>
               {hoveredBits}
             </span>
-            <span style={{
-              fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
-              color: dark ? '#52525b' : '#a1a1aa',
-            }}>
+            <span style={{ fontSize: 11, color: dark ? '#52525b' : '#94a3b8' }}>
               {hoveredBits?.length} bits
             </span>
           </div>
         )}
-        <span style={{
-          marginLeft: 'auto',
-          fontFamily: '"JetBrains Mono", monospace', fontSize: 9,
-          color: dark ? '#3f3f46' : '#c4c4c8',
-        }}>
-          scroll: zoom · drag: pan
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: dark ? '#3f3f46' : '#cbd5e1' }}>
+          scroll to zoom · drag to pan
         </span>
       </div>
 

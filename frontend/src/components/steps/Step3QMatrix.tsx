@@ -46,9 +46,11 @@ export default function Step3QMatrix({ payload, theme }: Props) {
       {/* Q matrix display */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div>
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#a1a1aa' : '#71717a' }}>
-            Quantization Matrix Q[8×8] &nbsp;×&nbsp;
-            <span style={{ color: '#f59e0b' }}>q={qFactor.toFixed(2)}</span>
+          <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
+            Quantization Matrix Q[8×8] ×
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: dark ? '#e4e4e7' : '#334155', marginLeft: 6 }}>
+              q={qFactor.toFixed(2)}
+            </span>
           </span>
         </div>
 
@@ -117,9 +119,9 @@ export default function Step3QMatrix({ payload, theme }: Props) {
           Q FACTOR
         </span>
         <span style={{
-          fontFamily: '"JetBrains Mono", monospace',
+          fontFamily: "'JetBrains Mono', monospace",
           fontSize: 28, fontWeight: 700,
-          color: '#f59e0b',
+          color: dark ? '#f8fafc' : '#0f172a',
         }}>
           {qFactor.toFixed(2)}
         </span>

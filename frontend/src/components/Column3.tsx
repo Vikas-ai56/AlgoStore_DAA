@@ -6,117 +6,84 @@ import {
 import { useStore } from '../store';
 import { MOCK_DATASET } from '../mockData';
 
-// ─── Signal Distortion Panel ──────────────────────────────────────────────────
-function SignalDistortion({ psnr, ssim, dark }: { psnr: number; ssim: number; dark: boolean }) {
-  const bd = dark ? '#27272a' : '#e4e4e7';
-
-  const psnrColor =
-    psnr > 40 ? '#10b981' :
-    psnr >= 30 ? '#f59e0b' :
-    '#ef4444';
-
-  const ssimColor =
-    ssim > 0.9 ? '#10b981' :
-    ssim >= 0.7 ? '#f59e0b' :
-    '#ef4444';
-
-  const Metric = ({
-    label, value, unit, color, note,
-  }: {
-    label: string; value: string; unit: string; color: string; note: string;
-  }) => (
+// ─── Section label ────────────────────────────────────────────────────────────
+function SectionLabel({ children, dark }: { children: string; dark: boolean }) {
+  return (
     <div style={{
-      padding: '14px 16px',
-      borderBottom: `1px solid ${bd}`,
+      padding: '10px 16px 6px',
+      borderBottom: `1px solid ${dark ? '#27272a' : '#e2e8f0'}`,
     }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between' }}>
+      <span style={{
+        fontSize: 10, fontWeight: 500,
+        color: dark ? '#52525b' : '#94a3b8',
+        textTransform: 'uppercase', letterSpacing: '0.07em',
+      }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
+// ─── Signal quality metrics ───────────────────────────────────────────────────
+function SignalDistortion({ psnr, ssim, dark }: { psnr: number; ssim: number; dark: boolean }) {
+  const bd = dark ? '#27272a' : '#e2e8f0';
+  const textPrimary = dark ? '#f8fafc' : '#0f172a';
+  const textMuted = dark ? '#71717a' : '#94a3b8';
+
+  const Metric = ({ fullName, value, unit }: { fullName: string; value: string; unit: string }) => (
+    <div style={{ padding: '14px 16px', borderBottom: `1px solid ${bd}` }}>
+      <div style={{ fontSize: 11, color: textMuted, marginBottom: 6 }}>{fullName}</div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
         <span style={{
-          fontFamily: '"JetBrains Mono", monospace', fontSize: 9,
-          letterSpacing: '0.12em', textTransform: 'uppercase',
-          color: dark ? '#52525b' : '#a1a1aa',
-        }}>
-          {label}
-        </span>
-        <span style={{
-          fontFamily: '"JetBrains Mono", monospace', fontSize: 9,
-          color: dark ? '#3f3f46' : '#d4d4d8',
-        }}>
-          {note}
-        </span>
-      </div>
-      <div style={{ marginTop: 6, display: 'flex', alignItems: 'baseline', gap: 4 }}>
-        <span style={{
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 32, fontWeight: 700, letterSpacing: '-0.02em',
-          color,
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 30, fontWeight: 700, letterSpacing: '-0.02em',
+          color: textPrimary,
         }}>
           {value}
         </span>
-        <span style={{
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 12, color: dark ? '#71717a' : '#a1a1aa',
-        }}>
-          {unit}
-        </span>
-      </div>
-      {/* Bar */}
-      <div style={{ marginTop: 8, height: 3, background: dark ? '#1f1f23' : '#e8e8ec', borderRadius: 2 }}>
-        <div style={{
-          height: '100%', borderRadius: 2,
-          width: unit === 'dB'
-            ? `${Math.min(100, Math.max(0, ((psnr - 15) / 35) * 100))}%`
-            : `${ssim * 100}%`,
-          background: color,
-          transition: 'width 0.8s ease',
-          boxShadow: `0 0 6px ${color}55`,
-        }} />
+        {unit && (
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: textMuted }}>
+            {unit}
+          </span>
+        )}
       </div>
     </div>
   );
 
   return (
     <div>
-      <Metric
-        label="PSNR" value={psnr.toFixed(2)} unit="dB"
-        color={psnrColor}
-        note={psnr > 40 ? '✓ excellent' : psnr >= 30 ? '⚠ acceptable' : '✗ degraded'}
-      />
-      <Metric
-        label="SSIM" value={ssim.toFixed(3)} unit=""
-        color={ssimColor}
-        note={ssim > 0.9 ? '✓ high fidelity' : ssim >= 0.7 ? '⚠ moderate' : '✗ poor'}
-      />
+      <Metric fullName="Peak Signal-to-Noise Ratio" value={psnr.toFixed(2)} unit="dB" />
+      <Metric fullName="Structural Similarity Index" value={ssim.toFixed(4)} unit="" />
     </div>
   );
 }
 
-// ─── Complexity Graph ─────────────────────────────────────────────────────────
-function ComplexityGraph({
-  timings, dark,
-}: { timings: Record<string, number>; dark: boolean }) {
-  const bd = dark ? '#27272a' : '#e4e4e7';
+// ─── Complexity graph ─────────────────────────────────────────────────────────
+function ComplexityGraph({ timings, dark }: { timings: Record<string, number>; dark: boolean }) {
+  const bd = dark ? '#27272a' : '#e2e8f0';
+  const textMuted = dark ? '#52525b' : '#94a3b8';
+  const textSub = dark ? '#3f3f46' : '#cbd5e1';
 
   const data = useMemo(() => {
     const entries = Object.entries(timings);
     return entries.map(([stage, us], i) => ({
       stage: stage.replace('2D-', '').substring(0, 10),
       actual: us,
-      // Theoretical O(N log N) reference scaled to match the DCT stage
       theoretical: 18440 * ((i + 1) / entries.length) * 0.85,
     }));
   }, [timings]);
 
-  const CustomTooltip = ({ active, payload: pl, label }: any) => {
+  const TooltipContent = ({ active, payload: pl, label }: any) => {
     if (!active || !pl?.[0]) return null;
     return (
       <div style={{
-        background: dark ? '#18181b' : '#fff',
-        border: `1px solid ${dark ? '#27272a' : '#e4e4e7'}`,
-        padding: '8px 12px',
-        fontFamily: '"JetBrains Mono", monospace',
-        fontSize: 11,
+        background: dark ? '#18181b' : '#ffffff',
+        border: `1px solid ${bd}`,
+        padding: '7px 11px',
+        fontFamily: "'JetBrains Mono', monospace",
+        fontSize: 11, borderRadius: 4,
       }}>
-        <div style={{ color: dark ? '#e4e4e7' : '#18181b', marginBottom: 4 }}>{label}</div>
+        <div style={{ color: dark ? '#e4e4e7' : '#0f172a', marginBottom: 4 }}>{label}</div>
         {pl.map((p: any) => (
           <div key={p.dataKey} style={{ color: p.color }}>
             {p.name}: {p.value.toFixed(0)}μs
@@ -130,36 +97,31 @@ function ComplexityGraph({
     <div style={{ padding: '12px 0' }}>
       <div style={{
         padding: '0 16px 8px',
-        fontFamily: '"JetBrains Mono", monospace',
-        fontSize: 9, letterSpacing: '0.12em',
-        color: dark ? '#52525b' : '#a1a1aa',
-        textTransform: 'uppercase',
         display: 'flex', justifyContent: 'space-between',
+        fontSize: 11, color: dark ? '#a1a1aa' : '#64748b',
       }}>
-        <span>Execution Timings (μs)</span>
-        <span style={{ color: dark ? '#3f3f46' : '#d4d4d8' }}>N=pixel_area</span>
+        <span>Execution timings (μs)</span>
+        <span style={{ color: textMuted, fontSize: 10 }}>N = pixel area</span>
       </div>
 
-      <div style={{ height: 180 }}>
+      <div style={{ height: 176 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ left: 16, right: 16, top: 8, bottom: 8 }}>
-            <CartesianGrid stroke={dark ? '#1f1f23' : '#f0f0f0'} strokeDasharray="3 3" />
+            <CartesianGrid stroke={dark ? '#1f1f23' : '#f1f5f9'} strokeDasharray="3 3" />
             <XAxis
-              dataKey="stage" tick={{
-                fontFamily: '"JetBrains Mono"', fontSize: 8,
-                fill: dark ? '#52525b' : '#a1a1aa',
-              }}
+              dataKey="stage"
+              tick={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fill: textMuted }}
               axisLine={{ stroke: bd }} tickLine={false}
             />
             <YAxis
-              tick={{ fontFamily: '"JetBrains Mono"', fontSize: 8, fill: dark ? '#52525b' : '#a1a1aa' }}
+              tick={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fill: textMuted }}
               axisLine={false} tickLine={false}
-              tickFormatter={(v) => v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
+              tickFormatter={(v) => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<TooltipContent />} />
             <Line
               type="monotone" dataKey="theoretical" name="O(N log N) ref"
-              stroke="#3f3f46" strokeWidth={1.5} strokeDasharray="5 4"
+              stroke={dark ? '#3f3f46' : '#cbd5e1'} strokeWidth={1.5} strokeDasharray="5 4"
               dot={false}
             />
             <Line
@@ -178,23 +140,19 @@ function ComplexityGraph({
           <div key={stage} style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
             padding: '3px 0',
-            borderBottom: `1px solid ${dark ? '#111113' : '#f5f5f5'}`,
+            borderBottom: `1px solid ${dark ? '#111113' : '#f8fafc'}`,
           }}>
-            <span style={{
-              fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
-              color: dark ? '#71717a' : '#a1a1aa',
-            }}>
-              {stage}
-            </span>
+            <span style={{ fontSize: 10, color: dark ? '#71717a' : '#64748b' }}>{stage}</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <div style={{
-                height: 4, borderRadius: 2,
+                height: 3, borderRadius: 2,
                 width: `${Math.max(4, (us / 20000) * 80)}px`,
                 background: us > 10000 ? '#f59e0b' : us > 3000 ? '#a78bfa' : '#10b981',
               }} />
               <span style={{
-                fontFamily: '"JetBrains Mono", monospace', fontSize: 10,
-                color: dark ? '#e4e4e7' : '#27272a', minWidth: 56, textAlign: 'right',
+                fontFamily: "'JetBrains Mono', monospace",
+                fontSize: 10, color: dark ? '#e4e4e7' : '#334155',
+                minWidth: 56, textAlign: 'right',
               }}>
                 {us.toLocaleString()}μs
               </span>
@@ -206,29 +164,28 @@ function ComplexityGraph({
   );
 }
 
-// ─── Memory Profiler ──────────────────────────────────────────────────────────
+// ─── Memory profiler ──────────────────────────────────────────────────────────
 function MemoryProfiler({ peakBytes, timings, dark }: { peakBytes: number; timings: Record<string, number>; dark: boolean }) {
-  const bd = dark ? '#27272a' : '#e4e4e7';
+  const bd = dark ? '#27272a' : '#e2e8f0';
+  const textMuted = dark ? '#52525b' : '#94a3b8';
   const peakMB = (peakBytes / 1024 / 1024).toFixed(1);
 
-  // Simulate memory accumulation across stages
   const stages = Object.keys(timings);
   const data = stages.map((stage, i) => ({
     stage: stage.replace('2D-', '').substring(0, 10),
     heap: Math.round(peakBytes * 0.1 + (peakBytes * 0.9 * (i + 1) / stages.length) * (0.85 + Math.sin(i) * 0.15)),
   }));
-  // Final stage dips down (cleanup)
   if (data.length > 0) data[data.length - 1].heap = Math.round(peakBytes * 0.3);
 
-  const CustomTooltip = ({ active, payload: pl, label }: any) => {
+  const TooltipContent = ({ active, payload: pl, label }: any) => {
     if (!active || !pl?.[0]) return null;
     return (
       <div style={{
-        background: dark ? '#18181b' : '#fff',
+        background: dark ? '#18181b' : '#ffffff',
         border: `1px solid ${bd}`, padding: '6px 10px',
-        fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
+        fontFamily: "'JetBrains Mono', monospace", fontSize: 11, borderRadius: 4,
       }}>
-        <div style={{ color: dark ? '#e4e4e7' : '#18181b' }}>{label}</div>
+        <div style={{ color: dark ? '#e4e4e7' : '#0f172a', marginBottom: 2 }}>{label}</div>
         <div style={{ color: '#a78bfa' }}>{(pl[0].value / 1024 / 1024).toFixed(1)} MB</div>
       </div>
     );
@@ -238,48 +195,46 @@ function MemoryProfiler({ peakBytes, timings, dark }: { peakBytes: number; timin
     <div style={{ padding: '12px 0' }}>
       <div style={{
         padding: '0 16px 8px',
-        fontFamily: '"JetBrains Mono", monospace',
-        fontSize: 9, letterSpacing: '0.12em',
-        color: dark ? '#52525b' : '#a1a1aa',
-        textTransform: 'uppercase',
-        display: 'flex', justifyContent: 'space-between',
-        alignItems: 'center',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        fontSize: 11, color: dark ? '#a1a1aa' : '#64748b',
       }}>
-        <span>Memory Footprint</span>
+        <span>Heap usage estimate</span>
         <span style={{
-          color: '#a78bfa', fontWeight: 700, fontSize: 11,
-          padding: '1px 8px',
-          border: '1px solid #6d28d9',
-          borderRadius: 3, background: dark ? '#1a0e2d' : '#f5f3ff',
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 11, fontWeight: 600,
+          color: dark ? '#c4b5fd' : '#7c3aed',
+          padding: '1px 7px',
+          border: `1px solid ${dark ? '#4c1d95' : '#ddd6fe'}`,
+          borderRadius: 4,
+          background: dark ? '#1a0e2d' : '#faf5ff',
         }}>
-          Peak: {peakMB} MB
+          {peakMB} MB peak
         </span>
       </div>
 
-      <div style={{ height: 140 }}>
+      <div style={{ height: 136 }}>
         <ResponsiveContainer width="100%" height="100%">
           <LineChart data={data} margin={{ left: 16, right: 16, top: 8, bottom: 8 }}>
-            <CartesianGrid stroke={dark ? '#1f1f23' : '#f0f0f0'} strokeDasharray="3 3" />
+            <CartesianGrid stroke={dark ? '#1f1f23' : '#f1f5f9'} strokeDasharray="3 3" />
             <XAxis
               dataKey="stage"
-              tick={{ fontFamily: '"JetBrains Mono"', fontSize: 8, fill: dark ? '#52525b' : '#a1a1aa' }}
+              tick={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fill: textMuted }}
               axisLine={{ stroke: bd }} tickLine={false}
             />
             <YAxis
-              tick={{ fontFamily: '"JetBrains Mono"', fontSize: 8, fill: dark ? '#52525b' : '#a1a1aa' }}
+              tick={{ fontFamily: "'JetBrains Mono'", fontSize: 8, fill: textMuted }}
               axisLine={false} tickLine={false}
               tickFormatter={(v) => `${(v / 1024 / 1024).toFixed(0)}M`}
             />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<TooltipContent />} />
             <ReferenceLine
-              y={peakBytes} stroke="#ef444455" strokeDasharray="4 3"
-              label={{ value: 'peak', position: 'right', fontSize: 8, fill: '#ef4444', fontFamily: '"JetBrains Mono"' }}
+              y={peakBytes} stroke={dark ? '#4c1d95' : '#ddd6fe'} strokeDasharray="4 3"
+              label={{ value: 'peak', position: 'right', fontSize: 8, fill: dark ? '#a78bfa' : '#7c3aed', fontFamily: "'JetBrains Mono'" }}
             />
             <Line
               type="monotone" dataKey="heap"
               stroke="#a78bfa" strokeWidth={2}
               dot={{ fill: '#a78bfa', r: 3, strokeWidth: 0 }}
-              fill="#a78bfa11"
             />
           </LineChart>
         </ResponsiveContainer>
@@ -292,38 +247,19 @@ function MemoryProfiler({ peakBytes, timings, dark }: { peakBytes: number; timin
 export default function Column3() {
   const { theme, dataset } = useStore();
   const dark = theme === 'dark';
-  const bd = dark ? '#27272a' : '#e4e4e7';
 
   const ds = dataset ?? MOCK_DATASET;
   const { psnr, ssim, layer_timings_us, memory_peak_bytes } = ds.metrics;
 
-  const sectionHdr = (title: string) => (
-    <div style={{
-      padding: '8px 16px',
-      borderTop: `1px solid ${bd}`,
-      borderBottom: `1px solid ${bd}`,
-      background: dark ? '#0d0d0f' : '#f0f0f0',
-    }}>
-      <span style={{
-        fontFamily: '"JetBrains Mono", monospace',
-        fontSize: 9, letterSpacing: '0.12em',
-        color: dark ? '#52525b' : '#a1a1aa',
-        textTransform: 'uppercase',
-      }}>
-        {title}
-      </span>
-    </div>
-  );
-
   return (
     <div>
-      {sectionHdr('Signal Distortion')}
+      <SectionLabel dark={dark}>Signal quality</SectionLabel>
       <SignalDistortion psnr={psnr} ssim={ssim} dark={dark} />
 
-      {sectionHdr('Complexity Graph')}
+      <SectionLabel dark={dark}>Execution timing</SectionLabel>
       <ComplexityGraph timings={layer_timings_us} dark={dark} />
 
-      {sectionHdr('Memory Profiler')}
+      <SectionLabel dark={dark}>Memory</SectionLabel>
       <MemoryProfiler peakBytes={memory_peak_bytes} timings={layer_timings_us} dark={dark} />
     </div>
   );

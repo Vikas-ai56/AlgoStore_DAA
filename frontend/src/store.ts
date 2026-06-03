@@ -23,7 +23,7 @@ interface AppState {
 }
 
 export const useStore = create<AppState>((set, get) => ({
-  theme: (localStorage.getItem('theme') as 'dark' | 'light') || 'dark',
+  theme: (localStorage.getItem('theme') as 'dark' | 'light') || 'light',
   jobs: [],
   dataset: null,
   activeChannel: 'y_channel',

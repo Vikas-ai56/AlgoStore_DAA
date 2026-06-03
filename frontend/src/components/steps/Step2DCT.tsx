@@ -69,33 +69,35 @@ export default function Step2DCT({ payload, theme }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 16, height: '100%' }}>
       {/* Controls row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: 16, fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#a1a1aa' : '#71717a' }}>
+        <div style={{ display: 'flex', gap: 16, fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
           <span>DCT Coefficients — {cols}×{rows}</span>
-          <span style={{ color: '#f59e0b' }}>max(DC)={maxDC.toFixed(1)}</span>
-          <span style={{ color: '#a78bfa' }}>max(AC)={maxAC.toFixed(2)}</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#f59e0b' }}>max(DC)={maxDC.toFixed(1)}</span>
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#a78bfa' }}>max(AC)={maxAC.toFixed(2)}</span>
         </div>
         <label style={{
           display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
-          fontFamily: '"JetBrains Mono", monospace', fontSize: 11,
-          color: dark ? '#e4e4e7' : '#27272a',
+          fontSize: 12, color: dark ? '#e4e4e7' : '#334155',
         }}>
           <div
             onClick={() => setLogScale(!logScale)}
             style={{
-              width: 32, height: 18, borderRadius: 9,
-              background: logScale ? '#f59e0b' : (dark ? '#27272a' : '#d4d4d8'),
+              width: 30, height: 17, borderRadius: 9,
+              background: logScale ? '#2563eb' : (dark ? '#27272a' : '#e2e8f0'),
               position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
               flexShrink: 0,
             }}
           >
             <div style={{
-              width: 12, height: 12, borderRadius: '50%', background: '#fff',
+              width: 11, height: 11, borderRadius: '50%', background: '#fff',
               position: 'absolute', top: 3,
-              left: logScale ? 17 : 3,
+              left: logScale ? 16 : 3,
               transition: 'left 0.2s',
             }} />
           </div>
-          Log₂ Scale  <span style={{ color: dark ? '#52525b' : '#a1a1aa' }}>log(|F|+1)</span>
+          Log₂ scale
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: dark ? '#52525b' : '#94a3b8' }}>
+            log(|F|+1)
+          </span>
         </label>
       </div>
 

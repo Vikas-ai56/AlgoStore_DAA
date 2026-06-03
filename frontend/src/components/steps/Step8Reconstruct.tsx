@@ -3,13 +3,12 @@ import type { StepPayload } from '../../types';
 
 interface Props {
   payload: StepPayload;
-  originalDims: [number, number];
   theme: 'dark' | 'light';
 }
 
 const W = 600, H = 400;
 
-export default function Step8Reconstruct({ payload, originalDims, theme }: Props) {
+export default function Step8Reconstruct({ payload, theme }: Props) {
   const origRef = useRef<HTMLCanvasElement>(null);
   const reconRef = useRef<HTMLCanvasElement>(null);
   const [sliderPct, setSliderPct] = useState(50);
@@ -19,15 +18,14 @@ export default function Step8Reconstruct({ payload, originalDims, theme }: Props
 
   const origGrid = payload.step1_padded_pixels;
   const reconGrid = payload.step8_reconstructed_pixels;
-  const [origH, origW] = originalDims;
 
   const drawGrid = (canvas: HTMLCanvasElement | null, grid: number[][], label: string) => {
     if (!canvas || grid.length === 0) return;
     const ctx = canvas.getContext('2d')!;
     ctx.clearRect(0, 0, W, H);
-    const rows = Math.min(grid.length, origH);
-    const cols = Math.min((grid[0]?.length ?? 0), origW);
-    const scaleX = W / origW, scaleY = H / origH;
+    const rows = grid.length;
+    const cols = grid[0]?.length ?? 0;
+    const scaleX = W / cols, scaleY = H / rows;
 
     const img = ctx.createImageData(W, H);
     for (let r = 0; r < rows; r++) {
@@ -55,7 +53,7 @@ export default function Step8Reconstruct({ payload, originalDims, theme }: Props
   useEffect(() => {
     drawGrid(origRef.current, origGrid, 'ORIGINAL');
     drawGrid(reconRef.current, reconGrid, 'IDCT');
-  }, [origGrid, reconGrid, origH, origW]);
+  }, [origGrid, reconGrid]);
 
   const onMouseDown = useCallback(() => setDragging(true), []);
   const onMouseUp = useCallback(() => setDragging(false), []);
@@ -83,15 +81,17 @@ export default function Step8Reconstruct({ payload, originalDims, theme }: Props
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#a1a1aa' : '#71717a' }}>
-          IDCT Reconstruction — drag separator to compare
+        <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
+          IDCT reconstruction — drag to compare
         </span>
-        <div style={{ display: 'flex', gap: 16, fontFamily: '"JetBrains Mono", monospace', fontSize: 11 }}>
-          <span style={{ color: dark ? '#a1a1aa' : '#71717a' }}>
-            max Δ: <span style={{ color: '#ef4444' }}>{maxDiff}</span>
+        <div style={{ display: 'flex', gap: 16, fontSize: 12, color: dark ? '#71717a' : '#94a3b8' }}>
+          <span>
+            max Δ{' '}
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: dark ? '#e4e4e7' : '#334155' }}>{maxDiff}</span>
           </span>
-          <span style={{ color: dark ? '#a1a1aa' : '#71717a' }}>
-            avg Δ: <span style={{ color: '#f59e0b' }}>{avgDiff.toFixed(1)}</span>
+          <span>
+            avg Δ{' '}
+            <span style={{ fontFamily: "'JetBrains Mono', monospace", color: dark ? '#e4e4e7' : '#334155' }}>{avgDiff.toFixed(1)}</span>
           </span>
         </div>
       </div>
@@ -135,8 +135,8 @@ export default function Step8Reconstruct({ payload, originalDims, theme }: Props
             position: 'absolute', top: 0, bottom: 0,
             left: `${sliderPct}%`,
             width: 2,
-            background: 'cyan',
-            boxShadow: '0 0 8px rgba(0, 255, 255, 0.6)',
+            background: 'rgba(255,255,255,0.9)',
+            boxShadow: '0 0 0 1px rgba(255,255,255,0.4)',
             cursor: 'col-resize',
             transform: 'translateX(-1px)',
           }}
@@ -147,9 +147,9 @@ export default function Step8Reconstruct({ payload, originalDims, theme }: Props
             transform: 'translate(-50%, -50%)',
             width: 24, height: 24, borderRadius: '50%',
             background: '#000',
-            border: '2px solid cyan',
+            border: '2px solid rgba(255,255,255,0.8)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'cyan', fontSize: 10, fontFamily: '"JetBrains Mono", monospace',
+            color: '#fff', fontSize: 10, fontFamily: "'JetBrains Mono', monospace",
             cursor: 'col-resize',
           }}>
             ⟺
@@ -159,20 +159,20 @@ export default function Step8Reconstruct({ payload, originalDims, theme }: Props
         {/* Side labels floating */}
         <div style={{
           position: 'absolute', top: 10, left: 10,
-          fontFamily: '"JetBrains Mono", monospace', fontSize: 9,
-          color: '#10b981', padding: '2px 8px',
-          background: 'rgba(0,0,0,0.7)', borderRadius: 3,
+          fontFamily: "'JetBrains Mono', monospace", fontSize: 9,
+          color: '#fff', padding: '2px 8px',
+          background: 'rgba(0,0,0,0.55)', borderRadius: 3,
           pointerEvents: 'none',
           opacity: sliderPct > 15 ? 1 : 0, transition: 'opacity 0.2s',
         }}>ORIGINAL</div>
         <div style={{
           position: 'absolute', top: 10, right: 10,
           fontFamily: '"JetBrains Mono", monospace', fontSize: 9,
-          color: '#f59e0b', padding: '2px 8px',
-          background: 'rgba(0,0,0,0.7)', borderRadius: 3,
+          color: '#fff', padding: '2px 8px',
+          background: 'rgba(0,0,0,0.55)', borderRadius: 3,
           pointerEvents: 'none',
           opacity: sliderPct < 85 ? 1 : 0, transition: 'opacity 0.2s',
-        }}>IDCT (LOSSY)</div>
+        }}>IDCT</div>
       </div>
 
       {/* Diff bar */}

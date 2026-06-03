@@ -114,17 +114,20 @@ export default function Step1Padded({ payload, originalDims, theme }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#a1a1aa' : '#71717a' }}>
-          Padded Grayscale — {cols}×{rows}px (orig: {origW}×{origH})
+        <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
+          Padded grayscale — {cols}×{rows}px
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", marginLeft: 6, color: dark ? '#52525b' : '#94a3b8', fontSize: 11 }}>
+            (orig: {origW}×{origH})
+          </span>
         </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontFamily: '"JetBrains Mono", monospace', fontSize: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: dark ? '#52525b' : '#94a3b8' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ display: 'inline-block', width: 16, height: 8, border: '1.5px dashed #f59e0b', borderRadius: 1 }} />
-            <span style={{ color: '#f59e0b' }}>original bounds</span>
+            original bounds
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ display: 'inline-block', width: 16, height: 8, background: 'rgba(234,88,12,0.25)', borderRadius: 1 }} />
-            <span style={{ color: '#ea580c' }}>pad region</span>
+            pad region
           </span>
         </div>
       </div>

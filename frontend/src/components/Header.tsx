@@ -1,162 +1,74 @@
 import { useStore } from '../store';
-import { Sun, Moon, Database, Cpu } from 'lucide-react';
-
-const WORKER_COUNT = 8;
+import { Sun, Moon, Database, HardDrive } from 'lucide-react';
 
 export default function Header() {
   const { theme, toggleTheme } = useStore();
   const dark = theme === 'dark';
 
-  const bd = dark ? '#27272a' : '#e4e4e7';
-  const bg = dark ? '#0c0c0e' : '#f4f4f5';
-  const muted = dark ? '#a1a1aa' : '#71717a';
+  const bd = dark ? '#27272a' : '#e2e8f0';
+  const bg = dark ? '#0c0c0e' : '#ffffff';
+  const text2 = dark ? '#71717a' : '#64748b';
+  const text3 = dark ? '#52525b' : '#94a3b8';
 
   return (
-    <header
-      style={{
-        height: 44,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        padding: '0 16px',
-        borderBottom: `1px solid ${bd}`,
-        background: bg,
-        flexShrink: 0,
-        zIndex: 10,
-      }}
-    >
-      {/* Left — title + workers */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
-        <span
-          style={{
-            fontFamily: '"JetBrains Mono", monospace',
-            fontSize: 11,
-            fontWeight: 600,
-            letterSpacing: '0.12em',
-            color: dark ? '#f4f4f5' : '#09090b',
-            textTransform: 'uppercase',
-          }}
-        >
-          ALGOSTORE{' '}
-          <span style={{ color: '#52525b', fontWeight: 400 }}>//</span>
-          {' '}COMPRESSION PROFILER
-          <span
-            style={{
-              display: 'inline-block',
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: '#10b981',
-              marginLeft: 10,
-              verticalAlign: 'middle',
-              boxShadow: '0 0 6px #10b981',
-            }}
-            className="pulse-dot"
-          />
+    <header style={{
+      height: 52,
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 20px',
+      borderBottom: `1px solid ${bd}`,
+      background: bg,
+      flexShrink: 0,
+    }}>
+      {/* Title */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: dark ? '#f8fafc' : '#0f172a', letterSpacing: '-0.01em' }}>
+          AlgoStore
         </span>
-
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '3px 10px',
-            border: `1px solid ${bd}`,
-            borderRadius: 4,
-            background: dark ? '#18181b' : '#ffffff',
-          }}
-        >
-          <Cpu size={12} color={dark ? '#10b981' : '#059669'} />
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#10b981' : '#059669' }}>
-            Worker Pool:&nbsp;
-          </span>
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, fontWeight: 600, color: dark ? '#f4f4f5' : '#09090b' }}>
-            {WORKER_COUNT}/{WORKER_COUNT}&nbsp;
-          </span>
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: muted }}>Active</span>
-          <div style={{ display: 'flex', gap: 3, marginLeft: 4 }}>
-            {Array.from({ length: WORKER_COUNT }).map((_, i) => (
-              <span
-                key={i}
-                className="pulse-dot"
-                style={{
-                  display: 'inline-block',
-                  width: 5,
-                  height: 5,
-                  borderRadius: '50%',
-                  background: '#10b981',
-                  animationDelay: `${i * 0.22}s`,
-                }}
-              />
-            ))}
-          </div>
-        </div>
+        <span style={{ color: dark ? '#3f3f46' : '#cbd5e1', fontSize: 16, lineHeight: 1 }}>/</span>
+        <span style={{ fontSize: 14, color: text2 }}>
+          Compression Profiler
+        </span>
       </div>
 
-      {/* Right — DB status + theme toggle */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '3px 10px',
-            border: `1px solid ${bd}`,
-            borderRadius: 4,
-            background: dark ? '#18181b' : '#ffffff',
-          }}
-        >
-          <Database size={12} color={muted} />
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: muted }}>
-            PostgreSQL
-          </span>
-          <span
-            style={{
-              display: 'inline-block',
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: '#10b981',
-              boxShadow: '0 0 4px #10b981',
-            }}
-          />
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: muted }}>
-            | MinIO
-          </span>
-          <span
-            style={{
-              display: 'inline-block',
-              width: 6,
-              height: 6,
-              borderRadius: '50%',
-              background: '#10b981',
-              boxShadow: '0 0 4px #10b981',
-            }}
-          />
+      {/* Right side */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Infrastructure indicators */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          {[
+            { Icon: Database, label: 'PostgreSQL' },
+            { Icon: HardDrive, label: 'MinIO' },
+          ].map(({ Icon, label }) => (
+            <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+              <Icon size={13} color={text3} />
+              <span style={{ fontSize: 12, color: text2 }}>{label}</span>
+              <span style={{
+                display: 'inline-block', width: 6, height: 6, borderRadius: '50%',
+                background: dark ? '#10b981' : '#059669',
+              }} />
+            </div>
+          ))}
         </div>
+
+        <div style={{ width: 1, height: 18, background: bd }} />
 
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
           style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '4px 12px',
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '5px 11px',
             border: `1px solid ${bd}`,
-            borderRadius: 4,
-            background: dark ? '#18181b' : '#ffffff',
-            color: dark ? '#a1a1aa' : '#71717a',
+            borderRadius: 6,
+            background: 'transparent',
+            color: text2,
             cursor: 'pointer',
-            fontSize: 11,
-            fontFamily: '"JetBrains Mono", monospace',
-            transition: 'all 0.15s',
+            fontSize: 12,
+            fontFamily: 'inherit',
+            transition: 'background 0.15s',
           }}
         >
-          {dark
-            ? <><Sun size={12} /><span>LIGHT</span></>
-            : <><Moon size={12} /><span>DARK</span></>
-          }
+          {dark ? <Sun size={13} /> : <Moon size={13} />}
+          {dark ? 'Light' : 'Dark'}
         </button>
       </div>
     </header>

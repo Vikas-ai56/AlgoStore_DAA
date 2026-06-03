@@ -79,19 +79,17 @@ export default function Step4Quantized({ payload, theme }: Props) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 16, height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 11, color: dark ? '#a1a1aa' : '#71717a' }}>
-          Quantized DCT Blocks (int16) — {cols}×{rows}
+        <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
+          Quantized DCT blocks (int16) — {cols}×{rows}
         </span>
         <div style={{
-          padding: '4px 14px',
+          padding: '3px 12px',
           border: `1px solid ${dark ? '#1d3a4a' : '#bfdbfe'}`,
           borderRadius: 4,
           background: dark ? '#0a1929' : '#eff6ff',
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 12,
-          fontWeight: 700,
-          color: '#60a5fa',
-          letterSpacing: '0.06em',
+          fontFamily: "'JetBrains Mono', monospace",
+          fontSize: 12, fontWeight: 600,
+          color: dark ? '#60a5fa' : '#2563eb',
         }}>
           Sparsity: {zeroPct}%
         </div>

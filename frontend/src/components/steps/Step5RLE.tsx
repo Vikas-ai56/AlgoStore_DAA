@@ -55,12 +55,10 @@ export default function Step5RLE({ payload, theme }: Props) {
         paddingRight: 16,
         overflow: 'hidden',
       }}>
-        <div style={{
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 11, color: dark ? '#a1a1aa' : '#71717a',
-          marginBottom: 10, flexShrink: 0,
-        }}>
-          RLE Stream — {totalPairs} pairs
+        <div style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b', marginBottom: 10, flexShrink: 0 }}>
+          RLE stream —
+          <span style={{ fontFamily: "'JetBrains Mono', monospace", marginLeft: 5 }}>{totalPairs}</span>
+          {' '}pairs
         </div>
 
         {/* Column headers */}
@@ -126,12 +124,8 @@ export default function Step5RLE({ payload, theme }: Props) {
         paddingLeft: 16,
         overflow: 'hidden',
       }}>
-        <div style={{
-          fontFamily: '"JetBrains Mono", monospace',
-          fontSize: 11, color: dark ? '#a1a1aa' : '#71717a',
-          marginBottom: 10, flexShrink: 0,
-        }}>
-          Symbol Frequency — top 20
+        <div style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b', marginBottom: 10, flexShrink: 0 }}>
+          Symbol frequency — top 20
         </div>
 
         <div style={{ flex: 1 }}>

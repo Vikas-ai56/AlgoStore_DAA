@@ -2,44 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Design tokens ──────────────────────────────────────────────────────────── */
 :root {
-  --canvas-bg: #09090b;
-  --surface: #18181b;
-  --border: #27272a;
-  --text-primary: #f4f4f5;
-  --text-muted: #a1a1aa;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --error: #ef4444;
+  --bg: #ffffff;
+  --surface: #f8fafc;
+  --surface-alt: #f1f5f9;
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --text-1: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --success: #059669;
+  --warning: #d97706;
+  --error: #dc2626;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 }
 
-.light-mode {
-  --canvas-bg: #fafafa;
-  --surface: #ffffff;
-  --border: #e4e4e7;
-  --text-primary: #09090b;
-  --text-muted: #71717a;
+.dark-mode {
+  --bg: #09090b;
+  --surface: #111113;
+  --surface-alt: #18181b;
+  --border: #27272a;
+  --border-subtle: #1f1f23;
+  --text-1: #f8fafc;
+  --text-2: #a1a1aa;
+  --text-3: #52525b;
+  --accent: #60a5fa;
+  --accent-bg: #0c1a3a;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
 }
 
 * { box-sizing: border-box; }
 
 body {
-  font-family: 'Geist', system-ui, -apple-system, sans-serif;
-  background: var(--canvas-bg);
-  color: var(--text-primary);
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text-1);
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Pulse animation for active workers */
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+/* ─── Animations ─────────────────────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
-@keyframes pulse-badge {
-  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4); }
-  50% { opacity: 0.85; box-shadow: 0 0 0 4px rgba(245, 158, 11, 0); }
+@keyframes scan-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes blink-cursor {
@@ -47,70 +62,37 @@ body {
   50% { opacity: 0; }
 }
 
-@keyframes scan-in {
-  from { opacity: 0; transform: translateX(-4px); }
-  to   { opacity: 1; transform: translateX(0); }
+.log-line {
+  animation: scan-in 0.1s ease-out both;
 }
 
-.pulse-dot { animation: pulse-dot 1.8s ease-in-out infinite; }
-.pulse-badge { animation: pulse-badge 1.2s ease-in-out infinite; }
 .cursor-blink::after {
   content: '▊';
   animation: blink-cursor 1s step-end infinite;
-  color: #22c55e;
-}
-.log-line { animation: scan-in 0.15s ease-out both; }
-
-/* Scanline overlay for terminal */
-.terminal-scanlines {
-  background-image: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.08) 2px,
-    rgba(0, 0, 0, 0.08) 4px
-  );
-  pointer-events: none;
+  color: #4ade80;
 }
 
-/* Subtle grid pattern for canvas backgrounds */
-.canvas-grid-bg {
-  background-image:
-    linear-gradient(var(--border) 1px, transparent 1px),
-    linear-gradient(90deg, var(--border) 1px, transparent 1px);
-  background-size: 20px 20px;
-}
-
-/* Step pagination bar */
-.step-tab {
-  cursor: pointer;
-  transition: all 0.15s ease;
-  border-bottom: 2px solid transparent;
-}
-.step-tab.active {
-  color: #f59e0b;
-  border-bottom-color: #f59e0b;
-}
-.step-tab:hover:not(.active) {
-  color: var(--text-primary);
-  background: rgba(255,255,255,0.04);
-}
-
-/* Heatmap tooltip */
+/* ─── Canvas tooltip ─────────────────────────────────────────────────────────── */
 .heatmap-tooltip {
   position: fixed;
   pointer-events: none;
-  background: #18181b;
-  border: 1px solid #3f3f46;
-  padding: 6px 10px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  padding: 5px 10px;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: #f4f4f5;
+  color: #f1f5f9;
   z-index: 9999;
   white-space: nowrap;
+  border-radius: 4px;
 }
 
-/* Huffman tree edge highlight */
-.huffman-edge { stroke: #3f3f46; stroke-width: 1.5; transition: stroke 0.2s; }
-.huffman-edge.highlighted { stroke: #3b82f6; stroke-width: 2.5; }
+/* ─── D3 Huffman tree ────────────────────────────────────────────────────────── */
+.huffman-edge {
+  stroke: #cbd5e1;
+  stroke-width: 1.5;
+  transition: stroke 0.2s;
+}
+.dark-mode .huffman-edge { stroke: #3f3f46; }
+.huffman-edge.highlighted { stroke: #2563eb; stroke-width: 2.5; }
 .huffman-node circle { transition: fill 0.2s; }
