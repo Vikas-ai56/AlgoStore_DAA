@@ -18,6 +18,7 @@ def process_compressed_image(
 	obj_name: str | None = None,
 	phash_value: str | None = None,
 	delete_source: bool = False,
+	original_filename: str | None = None,
 ):
 	def _progress(step: int, total: int, label: str):
 		self.update_state(
@@ -79,6 +80,9 @@ def process_compressed_image(
 		metadata={"phash": phash_value, "quantization_factor": quantization_factor},
 		original_size=original_size,
 		compression_ratio=compression_ratio,
+		original_filename=original_filename or path.name,
+		width=image.shape[1],
+		height=image.shape[0],
 	)
 	compressed_file.unlink()
 	if delete_source:

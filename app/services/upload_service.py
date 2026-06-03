@@ -35,22 +35,27 @@ class Upload:
         except ClientError:
             self.client.create_bucket(Bucket=self.bucket)
 
-    def _get_image_dimensions(self, path: Path):
-        try:
-            with PILImage.open(path) as image:
-                return image.size
-        except Exception:
-            return 0, 0
-
-    def _build_image_record(self, path: Path, obj_name: str):
-        width, height = self._get_image_dimensions(path)
-        file_bytes = path.read_bytes()
-        sha256 = hashlib.sha256(file_bytes).hexdigest()
+    def _build_image_record(
+        self,
+        path: Path,
+        obj_name: str,
+        sha256: str,
+        original_filename: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+    ) -> dict:
         file_size = path.stat().st_size
-
+        # Use caller-supplied dims (from cv2.imread shape) if available;
+        # PIL fallback only for direct image uploads, returns 0,0 for JSON files.
+        if width is None or height is None:
+            try:
+                with PILImage.open(path) as img:
+                    width, height = img.size
+            except Exception:
+                width, height = 0, 0
         return {
             "image_id": uuid4().hex,
-            "filename": path.name,
+            "filename": original_filename or path.name,
             "stored_path": f"s3://{self.bucket}/{obj_name}",
             "width": width,
             "height": height,
@@ -64,19 +69,45 @@ class Upload:
             raise ValueError("Image not found")
 
         obj_name = obj_name or path.name
+        original_filename = kwargs.get("original_filename")
+        width = kwargs.get("width")
+        height = kwargs.get("height")
+
+        # Pre-compute sha256 for dedup check before touching MinIO
+        file_bytes = path.read_bytes()
+        sha256 = hashlib.sha256(file_bytes).hexdigest()
+
+        session = get_session()
+        try:
+            existing = session.query(Image).filter(Image.sha256 == sha256).first()
+            if existing:
+                return {
+                    "success": True,
+                    "bucket": self.bucket,
+                    "object_name": obj_name,
+                    "image_id": existing.image_id,
+                    "stored_path": existing.stored_path,
+                    "sha256": sha256,
+                }
+        finally:
+            session.close()
 
         try:
             self.client.upload_file(str(path), self.bucket, obj_name)
 
-            image_record = self._build_image_record(path, obj_name)
+            image_record = self._build_image_record(
+                path, obj_name, sha256,
+                original_filename=original_filename,
+                width=width,
+                height=height,
+            )
             compressed_size = image_record["file_size"]
             original_size = kwargs.get("original_size", compressed_size)
             compression_ratio = kwargs.get("compression_ratio", compressed_size / original_size if original_size else 1.0)
 
             session = get_session()
             try:
-                image_row = Image(**image_record)
-                session.add(image_row)
+                session.add(Image(**image_record))
                 session.flush()
                 session.add(
                     CompressionResult(
@@ -96,13 +127,13 @@ class Upload:
 
         except ClientError as e:
             logging.error(e)
-            print(f"[Upload Error MinIO]: {e}")
             return False
+
         return {
             "success": True,
             "bucket": self.bucket,
             "object_name": obj_name,
             "image_id": image_record["image_id"],
             "stored_path": image_record["stored_path"],
-            "sha256": image_record["sha256"],
+            "sha256": sha256,
         }

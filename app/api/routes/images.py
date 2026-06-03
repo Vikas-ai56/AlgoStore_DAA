@@ -48,6 +48,7 @@ async def upload_for_profiling(file: UploadFile = File(...)):
         quantization_factor=DEFAULT_Q_FACTOR,
         upload_needed=True,
         delete_source=True,
+        original_filename=file.filename,
     )
     return UploadResponse(job_id=profile_task.id, storage_job_id=storage_task.id)
 
