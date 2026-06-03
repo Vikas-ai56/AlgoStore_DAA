@@ -87,6 +87,38 @@ body {
   border-radius: 4px;
 }
 
+/* ─── Step animations ───────────────────────────────────────────────────────── */
+@keyframes chip-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sweep-pulse {
+  0%   { box-shadow: 0 0 0 2px var(--success); }
+  50%  { box-shadow: 0 0 0 4px var(--success), 0 0 12px rgba(5,150,105,0.4); }
+  100% { box-shadow: 0 0 0 2px var(--success); }
+}
+
+/* Stage 4 zero-cell checkerboard */
+.zero-checker {
+  background-image: repeating-conic-gradient(var(--surface-alt) 0% 25%, var(--surface) 0% 50%);
+  background-size: 8px 8px;
+  background-position: center;
+}
+
+/* Stage 7 bit chip */
+.bit-chip {
+  animation: chip-enter 0.3s ease-out both;
+}
+
+/* Stage 3 sweep highlight */
+.sweep-cell {
+  animation: sweep-pulse 0.4s ease-in-out;
+  outline: 2px solid var(--success);
+  outline-offset: -1px;
+  z-index: 2;
+}
+
 /* ─── D3 Huffman tree ────────────────────────────────────────────────────────── */
 .huffman-edge {
   stroke: #cbd5e1;

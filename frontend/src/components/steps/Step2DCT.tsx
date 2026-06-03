@@ -1,140 +1,251 @@
-import { useEffect, useRef, useState } from 'react';
-import { infernoRgb, renderGridToImageData } from '../../utils/colormap';
+import { useState, useMemo } from 'react';
 import type { StepPayload } from '../../types';
 
 interface Props { payload: StepPayload; theme: 'dark' | 'light'; }
 
-const W = 480, H = 360;
+type Mode = 'spatial' | 'frequency';
+
+// Band: 0=DC, 1=Low-AC, 2=Mid-AC, 3=High-AC
+function cellBand(r: number, c: number): 0 | 1 | 2 | 3 {
+  if (r === 0 && c === 0) return 0;
+  const s = r + c;
+  if (s <= 2) return 1;
+  if (s <= 5) return 2;
+  return 3;
+}
+
+function dctCellBg(v: number, maxAbs: number): string {
+  if (maxAbs === 0) return 'transparent';
+  const t = Math.max(-1, Math.min(1, v / maxAbs));
+  if (t < -0.02) {
+    const i = -t;
+    return `hsl(220,${70 + i * 20}%,${98 - i * 48}%)`;
+  }
+  if (t > 0.02) {
+    return `hsl(${48 - t * 22},95%,${98 - t * 46}%)`;
+  }
+  return '#f8f8f8';
+}
+
+function spatialCellBg(v: number): string {
+  return `rgb(${v},${v},${v})`;
+}
+
+const BAND_COLORS = ['var(--success)', 'var(--accent)', 'var(--warning)', 'var(--error)'];
+const BAND_LABELS = ['DC', 'Low-AC', 'Mid-AC', 'High-AC'];
 
 export default function Step2DCT({ payload, theme }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [logScale, setLogScale] = useState(true);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; r: number; c: number; v: number } | null>(null);
+  const [mode, setMode] = useState<Mode>('frequency');
+  const [selectedCell, setSelectedCell] = useState<[number, number] | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string } | null>(null);
   const dark = theme === 'dark';
 
-  const grid = payload.step2_dct_coefficients;
-  const rows = grid.length, cols = grid[0]?.length ?? 0;
+  const dctBlock = payload.step2_dct_coefficients.slice(0, 8).map(r => r.slice(0, 8));
+  const spatialBlock = payload.step1_padded_pixels.slice(0, 8).map(r => r.slice(0, 8));
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || rows === 0) return;
-    const ctx = canvas.getContext('2d')!;
-    const img = ctx.createImageData(W, H);
-    renderGridToImageData(grid, img, infernoRgb, logScale);
-    ctx.putImageData(img, 0, 0);
+  const maxAbsDCT = Math.max(...dctBlock.flat().map(Math.abs), 1);
+  const selectedBand = selectedCell ? cellBand(selectedCell[0], selectedCell[1]) : null;
 
-    // Block grid overlay
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 0.5;
-    const scaleX = W / cols, scaleY = H / rows;
-    for (let r8 = 0; r8 <= rows; r8 += 8) {
-      ctx.beginPath(); ctx.moveTo(0, r8 * scaleY); ctx.lineTo(W, r8 * scaleY); ctx.stroke();
+  // Energy per band (sum of squared coefficients)
+  const bandEnergy = useMemo(() => {
+    const e = [0, 0, 0, 0];
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        e[cellBand(r, c)] += Math.pow(dctBlock[r]?.[c] ?? 0, 2);
+      }
     }
-    for (let c8 = 0; c8 <= cols; c8 += 8) {
-      ctx.beginPath(); ctx.moveTo(c8 * scaleX, 0); ctx.lineTo(c8 * scaleX, H); ctx.stroke();
-    }
-  }, [grid, rows, cols, logScale]);
+    return e;
+  }, [dctBlock]);
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const scaleX = W / cols, scaleY = H / rows;
-    const c = Math.floor((e.clientX - rect.left) / scaleX);
-    const r = Math.floor((e.clientY - rect.top) / scaleY);
-    if (r >= 0 && r < rows && c >= 0 && c < cols) {
-      setTooltip({ x: e.clientX + 12, y: e.clientY + 8, r, c, v: grid[r][c] });
-    }
-  };
+  const maxEnergy = Math.max(...bandEnergy, 1);
+  const dcValue = dctBlock[0]?.[0] ?? 0;
 
-  const bd = dark ? '#27272a' : '#e4e4e7';
-
-  // Colorbar
-  const barStops = Array.from({ length: 20 }, (_, i) => infernoRgb(i / 19))
-    .map(([r, g, b]) => `rgb(${r},${g},${b})`);
-
-  // DC vs AC stat
-  const flat = grid.flat();
-  const dcVals = [];
-  for (let r = 0; r < rows; r += 8) {
-    for (let c = 0; c < cols; c += 8) {
-      dcVals.push(Math.abs(grid[r]?.[c] ?? 0));
-    }
-  }
-  const maxDC = dcVals.length > 0 ? Math.max(...dcVals) : 0;
-  const maxAC = Math.max(...flat.filter((_, i) => {
-    const r = Math.floor(i / cols) % 8, c = i % cols % 8;
-    return !(r === 0 && c === 0);
-  }).map(Math.abs));
+  // SVG bar chart dimensions
+  const BAR_H = 160;
+  const BAR_W = 36;
+  const GAP = 8;
+  const SVG_W = 4 * (BAR_W + GAP);
+  const SVG_H = BAR_H + 40;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 16, height: '100%' }}>
-      {/* Controls row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ display: 'flex', gap: 16, fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
-          <span>DCT Coefficients — {cols}×{rows}</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#f59e0b' }}>max(DC)={maxDC.toFixed(1)}</span>
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", color: '#a78bfa' }}>max(AC)={maxAC.toFixed(2)}</span>
-        </div>
-        <label style={{
-          display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer',
-          fontSize: 12, color: dark ? '#e4e4e7' : '#334155',
-        }}>
-          <div
-            onClick={() => setLogScale(!logScale)}
-            style={{
-              width: 30, height: 17, borderRadius: 9,
-              background: logScale ? '#2563eb' : (dark ? '#27272a' : '#e2e8f0'),
-              position: 'relative', cursor: 'pointer', transition: 'background 0.2s',
-              flexShrink: 0,
-            }}
-          >
-            <div style={{
-              width: 11, height: 11, borderRadius: '50%', background: '#fff',
-              position: 'absolute', top: 3,
-              left: logScale ? 16 : 3,
-              transition: 'left 0.2s',
-            }} />
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+
+      {/* LEFT PANE */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* Toggle pill */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{
+            display: 'flex', borderRadius: 20,
+            border: '1px solid var(--border)',
+            overflow: 'hidden', background: 'var(--surface)',
+          }}>
+            {(['spatial', 'frequency'] as Mode[]).map(m => (
+              <button key={m} onClick={() => setMode(m)} style={{
+                padding: '5px 16px', border: 'none', cursor: 'pointer',
+                fontSize: 12, fontFamily: 'var(--font-sans)',
+                background: mode === m ? 'var(--accent)' : 'transparent',
+                color: mode === m ? '#fff' : 'var(--text-2)',
+                transition: 'all 0.3s',
+                fontWeight: mode === m ? 600 : 400,
+              }}>
+                {m === 'spatial' ? 'Spatial' : 'Frequency'}
+              </button>
+            ))}
           </div>
-          Log₂ scale
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: dark ? '#52525b' : '#94a3b8' }}>
-            log(|F|+1)
+          <span style={{ fontSize: 11, color: 'var(--text-3)' }}>
+            {mode === 'spatial' ? '8×8 raw pixel block' : '8×8 DCT coefficient block'} — click cell to inspect band
           </span>
-        </label>
+        </div>
+
+        {/* 8×8 Grid */}
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(8, 1fr)',
+          gap: 1, border: '1px solid var(--border)', borderRadius: 4,
+          background: 'var(--border)',
+          maxWidth: 360,
+          transition: 'opacity 0.3s',
+        }}>
+          {Array.from({ length: 8 }, (_, r) =>
+            Array.from({ length: 8 }, (_, c) => {
+              const dctV = dctBlock[r]?.[c] ?? 0;
+              const spV  = Math.min(255, Math.max(0, spatialBlock[r]?.[c] ?? 0));
+              const band = cellBand(r, c);
+              const isSelected = selectedCell?.[0] === r && selectedCell?.[1] === c;
+              const isHighlightedBand = selectedBand !== null && band === selectedBand && !isSelected;
+
+              const bg = mode === 'frequency'
+                ? dctCellBg(dctV, maxAbsDCT)
+                : spatialCellBg(spV);
+
+              const textColor = mode === 'frequency'
+                ? (Math.abs(dctV / maxAbsDCT) > 0.6 ? '#000' : (dark ? '#1f1f23' : '#0f172a'))
+                : (spV > 128 ? '#000' : '#fff');
+
+              return (
+                <div
+                  key={`${r}-${c}`}
+                  onClick={() => setSelectedCell(isSelected ? null : [r, c])}
+                  onMouseEnter={e => {
+                    const rect = (e.target as HTMLElement).getBoundingClientRect();
+                    const content = mode === 'frequency'
+                      ? `[${r},${c}] = ${dctV.toFixed(1)}  band: ${BAND_LABELS[band]}`
+                      : `[${r},${c}] = ${spV}`;
+                    setTooltip({ x: rect.right + 4, y: rect.top, content });
+                  }}
+                  onMouseLeave={() => setTooltip(null)}
+                  style={{
+                    aspectRatio: '1',
+                    background: bg,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: mode === 'frequency' ? 7 : 8,
+                    fontFamily: 'var(--font-mono)',
+                    color: textColor,
+                    cursor: 'pointer',
+                    outline: isSelected ? '2px solid var(--success)' : isHighlightedBand ? '1px solid var(--accent)' : 'none',
+                    outlineOffset: '-1px',
+                    transition: 'outline 0.15s',
+                    position: 'relative',
+                    zIndex: isSelected ? 2 : 1,
+                    userSelect: 'none',
+                  }}
+                >
+                  {mode === 'frequency'
+                    ? (Math.abs(dctV) >= 1 ? dctV.toFixed(0) : dctV.toFixed(1))
+                    : spV}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* DC chip */}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          padding: '6px 14px',
+          border: '1px solid var(--border)',
+          borderRadius: 6, background: 'var(--surface)',
+          alignSelf: 'flex-start',
+        }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700,
+            padding: '1px 6px', borderRadius: 3,
+            background: 'var(--success)', color: '#fff',
+            fontFamily: 'var(--font-mono)',
+          }}>DC</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 16, fontWeight: 700, color: 'var(--text-1)' }}>
+            {dcValue.toFixed(1)}
+          </span>
+          <span style={{ fontSize: 10, color: 'var(--text-3)' }}>
+            {((dcValue * dcValue / bandEnergy.reduce((a, b) => a + b, 1)) * 100).toFixed(0)}% of total energy
+          </span>
+        </div>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, flex: 1, overflow: 'hidden' }}>
-        {/* Canvas */}
-        <div style={{
-          flex: 1, border: `1px solid ${bd}`, borderRadius: 4,
-          overflow: 'hidden', background: '#000', position: 'relative',
-        }}>
-          <canvas
-            ref={canvasRef} width={W} height={H}
-            style={{ display: 'block', width: '100%', height: '100%', cursor: 'crosshair' }}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={() => setTooltip(null)}
-          />
+      <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
+
+      {/* RIGHT PANE — Energy bands */}
+      <div style={{ width: 220, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12, flexShrink: 0 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Frequency Energy
+        </span>
+
+        <svg width="100%" height={SVG_H} viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ overflow: 'visible' }}>
+          {bandEnergy.map((e, i) => {
+            const barH = Math.max(4, (e / maxEnergy) * BAR_H);
+            const x = i * (BAR_W + GAP);
+            const y = BAR_H - barH;
+            const isActive = selectedBand === i;
+            const color = BAND_COLORS[i];
+
+            return (
+              <g key={i}>
+                {/* Bar track */}
+                <rect x={x} y={0} width={BAR_W} height={BAR_H}
+                  fill={dark ? '#18181b' : '#f1f5f9'} rx={3} />
+                {/* Bar fill */}
+                <rect x={x} y={y} width={BAR_W} height={barH}
+                  fill={color} rx={3} opacity={isActive ? 1 : 0.65}
+                  style={{ transition: 'opacity 0.2s' }}
+                />
+                {isActive && (
+                  <rect x={x - 2} y={y - 2} width={BAR_W + 4} height={barH + 4}
+                    fill="none" stroke={color} strokeWidth={2} rx={4}
+                    style={{ filter: `drop-shadow(0 0 4px ${color})` }}
+                  />
+                )}
+                {/* Label */}
+                <text x={x + BAR_W / 2} y={BAR_H + 14} fontSize={9} fill={dark ? '#a1a1aa' : '#64748b'} textAnchor="middle">{BAND_LABELS[i]}</text>
+                {/* Value */}
+                <text x={x + BAR_W / 2} y={Math.max(y - 4, 10)} fontSize={8} fill={color} textAnchor="middle" fontWeight={600}>
+                  {e > 1000 ? `${(e / 1000).toFixed(1)}k` : e.toFixed(0)}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+
+        <div style={{ fontSize: 10, color: 'var(--text-3)', lineHeight: 1.6 }}>
+          Click any heatmap cell to highlight its frequency band.
+          DC holds most energy; high-AC bands approach zero after quantization.
         </div>
 
-        {/* Colorbar */}
-        <div style={{ width: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 9, color: dark ? '#52525b' : '#a1a1aa' }}>HIGH</span>
-          <div style={{
-            flex: 1, width: 16, borderRadius: 3, overflow: 'hidden',
-            background: `linear-gradient(to bottom, ${[...barStops].reverse().join(', ')})`,
-            border: `1px solid ${bd}`,
-          }} />
-          <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: 9, color: dark ? '#52525b' : '#a1a1aa' }}>LOW</span>
+        <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10, display: 'flex', flexDirection: 'column', gap: 4 }}>
+          {BAND_LABELS.map((label, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 2, background: BAND_COLORS[i], flexShrink: 0 }} />
+              <span style={{ color: 'var(--text-2)' }}>{label}</span>
+              <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--text-1)', fontSize: 10 }}>
+                {((bandEnergy[i] / bandEnergy.reduce((a, b) => a + b, 1)) * 100).toFixed(0)}%
+              </span>
+            </div>
+          ))}
         </div>
       </div>
 
       {tooltip && (
         <div className="heatmap-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
-          Block [{Math.floor(tooltip.r / 8).toString().padStart(2, '0')}, {Math.floor(tooltip.c / 8).toString().padStart(2, '0')}] &nbsp;
-          freq [{tooltip.r % 8},{tooltip.c % 8}] &nbsp;
-          <span style={{ color: '#f59e0b' }}>
-            {logScale ? `log=${Math.log(Math.abs(tooltip.v) + 1).toFixed(3)}` : `F=${tooltip.v.toFixed(3)}`}
-          </span>
-          {tooltip.r % 8 === 0 && tooltip.c % 8 === 0 && <span style={{ color: '#a78bfa', marginLeft: 8 }}>[DC]</span>}
+          {tooltip.content}
         </div>
       )}
     </div>

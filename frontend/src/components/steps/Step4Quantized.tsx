@@ -1,139 +1,218 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { StepPayload } from '../../types';
 
 interface Props { payload: StepPayload; theme: 'dark' | 'light'; }
 
-const W = 480, H = 360;
-
-function electricBlueRgb(t: number): [number, number, number] {
-  t = Math.max(0, Math.min(1, t));
-  return [
-    Math.round(29 + t * (96 - 29)),
-    Math.round(78 + t * (165 - 78)),
-    Math.round(216 + t * (250 - 216)),
-  ];
-}
+const ZIGZAG_SEQ: [number, number][] = [
+  [0,0],[0,1],[1,0],[2,0],[1,1],[0,2],[0,3],[1,2],[2,1],[3,0],
+  [4,0],[3,1],[2,2],[1,3],[0,4],[0,5],[1,4],[2,3],[3,2],[4,1],
+  [5,0],[6,0],[5,1],[4,2],[3,3],[2,4],[1,5],[0,6],[0,7],[1,6],
+  [2,5],[3,4],[4,3],[5,2],[6,1],[7,0],[7,1],[6,2],[5,3],[4,4],
+  [3,5],[2,6],[1,7],[2,7],[3,6],[4,5],[5,4],[6,3],[7,2],[7,3],
+  [6,4],[5,5],[4,6],[3,7],[4,7],[5,6],[6,5],[7,4],[7,5],[6,6],
+  [5,7],[6,7],[7,6],[7,7],
+];
 
 export default function Step4Quantized({ payload, theme }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; r: number; c: number; v: number } | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; content: string } | null>(null);
+  const [hovered, setHovered] = useState<number | null>(null);
   const dark = theme === 'dark';
-  const grid = payload.step4_quantized_blocks;
-  const rows = grid.length, cols = grid[0]?.length ?? 0;
-  const zeroPct = (payload.zero_fraction * 100).toFixed(1);
 
-  const maxAbs = Math.max(...grid.flat().map(Math.abs), 1);
+  // First 8×8 block
+  const block = payload.step4_quantized_blocks.slice(0, 8).map(r => r.slice(0, 8));
+  const flat = block.flat();
 
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || rows === 0) return;
-    const ctx = canvas.getContext('2d')!;
-    const img = ctx.createImageData(W, H);
-    const data = img.data;
-    const scaleX = W / cols, scaleY = H / rows;
+  const nonZeroCount = flat.filter(v => v !== 0).length;
+  const zeroCount = 64 - nonZeroCount;
+  const sparsityPct = ((zeroCount / 64) * 100).toFixed(1);
 
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const v = grid[r][c];
-        const px0x = Math.round(c * scaleX), px1x = Math.round((c + 1) * scaleX);
-        const px0y = Math.round(r * scaleY), px1y = Math.round((r + 1) * scaleY);
-        let cr: number, cg: number, cb: number;
-        if (v === 0) {
-          cr = 5; cg = 5; cb = 8; // near-black for zeros
-        } else {
-          [cr, cg, cb] = electricBlueRgb(Math.abs(v) / maxAbs);
-        }
-        for (let y = px0y; y < px1y; y++) {
-          for (let x = px0x; x < px1x; x++) {
-            const idx = (y * W + x) * 4;
-            data[idx] = cr; data[idx+1] = cg; data[idx+2] = cb; data[idx+3] = 255;
-          }
-        }
-      }
-    }
-    ctx.putImageData(img, 0, 0);
+  // Zigzag energy decay values
+  const zigzagVals = ZIGZAG_SEQ.map(([r, c]) => Math.abs(block[r]?.[c] ?? 0));
+  const maxZig = Math.max(...zigzagVals, 1);
 
-    // Block grid
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 0.5;
-    for (let r8 = 0; r8 <= rows; r8 += 8) {
-      ctx.beginPath(); ctx.moveTo(0, r8 * scaleY); ctx.lineTo(W, r8 * scaleY); ctx.stroke();
-    }
-    for (let c8 = 0; c8 <= cols; c8 += 8) {
-      ctx.beginPath(); ctx.moveTo(c8 * scaleX, 0); ctx.lineTo(c8 * scaleX, H); ctx.stroke();
-    }
-  }, [grid, rows, cols, maxAbs]);
+  // SVG dimensions for decay chart
+  const SVG_W = 260, SVG_H = 160;
+  const PAD_L = 28, PAD_B = 20, PAD_T = 10, PAD_R = 8;
+  const chartW = SVG_W - PAD_L - PAD_R;
+  const chartH = SVG_H - PAD_T - PAD_B;
 
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const scaleX = W / cols, scaleY = H / rows;
-    const c = Math.floor((e.clientX - rect.left) / scaleX);
-    const r = Math.floor((e.clientY - rect.top) / scaleY);
-    if (r >= 0 && r < rows && c >= 0 && c < cols) {
-      setTooltip({ x: e.clientX + 12, y: e.clientY + 8, r, c, v: grid[r][c] });
-    }
-  };
+  const pts = zigzagVals.map((v, i) => ({
+    x: PAD_L + (i / 63) * chartW,
+    y: PAD_T + chartH - (v / maxZig) * chartH,
+  }));
 
-  const bd = dark ? '#27272a' : '#e4e4e7';
+  const lineD = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaD = `${lineD} L${pts[pts.length - 1].x.toFixed(1)},${PAD_T + chartH} L${pts[0].x.toFixed(1)},${PAD_T + chartH} Z`;
+
+  // Y-axis ticks
+  const yTicks = [0, 0.25, 0.5, 0.75, 1.0].map(t => ({
+    y: PAD_T + chartH - t * chartH,
+    label: Math.round(t * maxZig).toString(),
+  }));
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 16, height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
-          Quantized DCT blocks (int16) — {cols}×{rows}
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+
+      {/* LEFT PANE — 8×8 sparsity map */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Quantized Block [0,0] — Sparsity Map
         </span>
+
         <div style={{
-          padding: '3px 12px',
-          border: `1px solid ${dark ? '#1d3a4a' : '#bfdbfe'}`,
-          borderRadius: 4,
-          background: dark ? '#0a1929' : '#eff6ff',
-          fontFamily: "'JetBrains Mono', monospace",
-          fontSize: 12, fontWeight: 600,
-          color: dark ? '#60a5fa' : '#2563eb',
+          display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)',
+          gap: 2, border: '1px solid var(--border)', borderRadius: 6,
+          background: 'var(--border)', padding: 2,
+          maxWidth: 320,
         }}>
-          Sparsity: {zeroPct}%
+          {flat.map((v, idx) => {
+            const r = Math.floor(idx / 8), c = idx % 8;
+            const isHovered = hovered === idx;
+            const absV = Math.abs(v);
+            const opacity = v === 0 ? 1 : Math.min(1, absV / 8 + 0.3);
+
+            let cellBg: string;
+            let cellClass = '';
+            if (v === 0) {
+              cellClass = 'zero-checker';
+              cellBg = '';
+            } else if (v > 0) {
+              cellBg = `rgba(5,150,105,${opacity})`;
+            } else {
+              cellBg = `rgba(220,38,38,${opacity})`;
+            }
+
+            return (
+              <div
+                key={idx}
+                className={v === 0 ? cellClass : ''}
+                onMouseEnter={e => {
+                  setHovered(idx);
+                  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setTooltip({ x: rect.right + 6, y: rect.top, content: `[${r}][${c}] = ${v}` });
+                }}
+                onMouseLeave={() => { setHovered(null); setTooltip(null); }}
+                style={{
+                  aspectRatio: '1',
+                  borderRadius: 3,
+                  background: v !== 0 ? cellBg : undefined,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: 9, fontFamily: 'var(--font-mono)',
+                  color: v === 0 ? 'var(--text-3)' : '#fff',
+                  fontWeight: v !== 0 ? 700 : 400,
+                  cursor: 'crosshair',
+                  outline: isHovered ? '2px solid var(--accent)' : 'none',
+                  outlineOffset: '-1px',
+                  transition: 'outline 0.1s',
+                  position: 'relative',
+                  zIndex: isHovered ? 2 : 1,
+                }}
+              >
+                {v !== 0 ? v : '·'}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Legend */}
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 10, color: 'var(--text-3)' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 12, height: 12, borderRadius: 2, background: 'rgba(5,150,105,0.7)', display: 'inline-block' }} />
+            positive
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 12, height: 12, borderRadius: 2, background: 'rgba(220,38,38,0.7)', display: 'inline-block' }} />
+            negative
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span className="zero-checker" style={{ width: 12, height: 12, borderRadius: 2, border: '1px solid var(--border)', display: 'inline-block' }} />
+            zero (discarded)
+          </span>
+        </div>
+
+        {/* Sparsity bar */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, maxWidth: 320 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+            <span style={{ color: 'var(--text-2)' }}>Sparsity</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--success)' }}>{sparsityPct}%</span>
+          </div>
+          <div style={{ height: 8, borderRadius: 4, background: 'var(--surface-alt)', overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${sparsityPct}%`, background: 'var(--success)', borderRadius: 4, transition: 'width 0.5s' }} />
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            {[
+              ['Zeros', `${zeroCount}`, 'var(--text-3)'],
+              ['Non-zero', `${nonZeroCount}`, 'var(--success)'],
+              ['Total', '64', 'var(--text-2)'],
+            ].map(([label, val, color]) => (
+              <div key={label} style={{ padding: '4px 10px', border: '1px solid var(--border)', borderRadius: 5, background: 'var(--surface)' }}>
+                <div style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.07em' }}>{label}</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 14, fontWeight: 700, color }}>{val}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
-      <div style={{ flex: 1, position: 'relative' }}>
-        <div style={{
-          position: 'absolute', inset: 0,
-          border: `1px solid ${bd}`, borderRadius: 4,
-          overflow: 'hidden', background: '#020204',
-        }}>
-          <canvas
-            ref={canvasRef} width={W} height={H}
-            style={{ display: 'block', width: '100%', height: '100%', cursor: 'crosshair' }}
-            onMouseMove={handleMouseMove}
-            onMouseLeave={() => setTooltip(null)}
-          />
-        </div>
-      </div>
+      <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
 
-      {/* Legend */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontFamily: '"JetBrains Mono", monospace', fontSize: 10 }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 14, height: 14, borderRadius: 2, background: '#050508', border: `1px solid ${bd}`, display: 'inline-block' }} />
-          <span style={{ color: dark ? '#52525b' : '#a1a1aa' }}>zero (discarded)</span>
+      {/* RIGHT PANE — Zigzag energy decay */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Energy Decay (Zigzag Scan Order)
         </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 14, height: 14, borderRadius: 2, background: 'rgb(29,78,216)', display: 'inline-block' }} />
-          <span style={{ color: dark ? '#a1a1aa' : '#71717a' }}>low magnitude</span>
-        </span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ width: 14, height: 14, borderRadius: 2, background: 'rgb(96,165,250)', display: 'inline-block' }} />
-          <span style={{ color: dark ? '#a1a1aa' : '#71717a' }}>high magnitude</span>
-        </span>
+
+        <svg width="100%" height={SVG_H} viewBox={`0 0 ${SVG_W} ${SVG_H}`} style={{ overflow: 'visible' }}>
+          {/* Grid lines */}
+          {yTicks.map(tick => (
+            <g key={tick.y}>
+              <line x1={PAD_L} y1={tick.y} x2={SVG_W - PAD_R} y2={tick.y}
+                stroke={dark ? '#27272a' : '#f1f5f9'} strokeWidth={0.5} />
+              <text x={PAD_L - 4} y={tick.y + 3} fontSize={7} fill="var(--text-3)" textAnchor="end">{tick.label}</text>
+            </g>
+          ))}
+
+          {/* Area fill */}
+          <path d={areaD} fill="rgba(5,150,105,0.10)" />
+
+          {/* Line */}
+          <path d={lineD} fill="none" stroke="var(--success)" strokeWidth={1.5} strokeLinejoin="round" />
+
+          {/* X axis */}
+          <line x1={PAD_L} y1={PAD_T + chartH} x2={SVG_W - PAD_R} y2={PAD_T + chartH}
+            stroke="var(--border)" strokeWidth={0.5} />
+
+          {/* X axis labels */}
+          {[0, 16, 32, 48, 63].map(i => (
+            <text key={i} x={PAD_L + (i / 63) * chartW} y={PAD_T + chartH + 12}
+              fontSize={7} fill="var(--text-3)" textAnchor="middle">{i}</text>
+          ))}
+
+          {/* Hovered dot */}
+          {hovered !== null && hovered < 64 && (() => {
+            const zigIdx = ZIGZAG_SEQ.findIndex(([rr, cc]) =>
+              rr === Math.floor(hovered / 8) && cc === hovered % 8
+            );
+            if (zigIdx < 0) return null;
+            const p = pts[zigIdx];
+            if (!p) return null;
+            return <circle cx={p.x} cy={p.y} r={3} fill="var(--success)" />;
+          })()}
+
+          {/* Axis labels */}
+          <text x={PAD_L + chartW / 2} y={SVG_H} fontSize={8} fill="var(--text-3)" textAnchor="middle">zigzag scan position</text>
+          <text x={8} y={PAD_T + chartH / 2} fontSize={8} fill="var(--text-3)" textAnchor="middle"
+            transform={`rotate(-90, 8, ${PAD_T + chartH / 2})`}>|coeff|</text>
+        </svg>
+
+        <div style={{ fontSize: 11, color: 'var(--text-2)', lineHeight: 1.6 }}>
+          JPEG zigzag scan reads DC→low-AC→high-AC. The steep dropoff confirms most energy concentrates at low frequencies (top-left of the 8×8 block), enabling RLE to compress long runs of zeros.
+        </div>
       </div>
 
       {tooltip && (
         <div className="heatmap-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
-          Block [{Math.floor(tooltip.r / 8).toString().padStart(2, '0')}, {Math.floor(tooltip.c / 8).toString().padStart(2, '0')}] &nbsp;
-          coeff [{tooltip.r % 8},{tooltip.c % 8}] &nbsp;
-          {tooltip.v === 0
-            ? <span style={{ color: '#52525b' }}>0 [ZERO]</span>
-            : <span style={{ color: '#60a5fa' }}>Q={tooltip.v}</span>
-          }
+          {tooltip.content}
         </div>
       )}
     </div>

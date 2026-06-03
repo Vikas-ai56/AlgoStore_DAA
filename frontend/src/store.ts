@@ -9,6 +9,7 @@ interface AppState {
   activeStep: number;
   selectedBlock: [number, number] | null;
   logs: string[];
+  currentJobId: string | null;
 
   setTheme: (t: 'dark' | 'light') => void;
   toggleTheme: () => void;
@@ -20,6 +21,7 @@ interface AppState {
   setSelectedBlock: (b: [number, number] | null) => void;
   addLog: (line: string) => void;
   clearLogs: () => void;
+  setCurrentJobId: (id: string | null) => void;
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -30,6 +32,7 @@ export const useStore = create<AppState>((set, get) => ({
   activeStep: 1,
   selectedBlock: null,
   logs: [],
+  currentJobId: null,
 
   setTheme: (t) => {
     localStorage.setItem('theme', t);
@@ -51,4 +54,5 @@ export const useStore = create<AppState>((set, get) => ({
   addLog: (line) =>
     set((s) => ({ logs: [...s.logs.slice(-199), line] })),
   clearLogs: () => set({ logs: [] }),
+  setCurrentJobId: (id) => set({ currentJobId: id }),
 }));

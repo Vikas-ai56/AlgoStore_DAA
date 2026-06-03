@@ -4,7 +4,7 @@ export interface JobPollResponse {
   progress: number;
   current_stage: string;
   error_traceback?: string;
-  payload?: ProfilerDataset;
+  payload?: ProfilerDataset | StorageJobResult;
 }
 
 export interface ProfilerDataset {
@@ -54,7 +54,35 @@ export interface JobEntry {
   error?: string;
   payload?: ProfilerDataset;
   createdAt: number;
+  storageJobId?: string;
+  storageStatus?: 'PENDING' | 'STARTED' | 'SUCCESS' | 'FAILURE';
+  imageId?: string;
+}
+
+export interface StorageJobResult {
+  upload_response: {
+    image_id: string;
+    bucket: string;
+    object_name: string;
+    stored_path: string;
+    sha256: string;
+  };
 }
 
 export type ChannelKey = 'y_channel' | 'cb_channel' | 'cr_channel';
 export type ChannelLabel = 'Y' | 'Cb' | 'Cr';
+
+export interface StoredImage {
+  image_id: string;
+  filename: string;
+  upload_timestamp: string;
+  width: number;
+  height: number;
+  file_size: number;
+  compression_ratio: number | null;
+}
+
+export interface StoredImagesResponse {
+  images: StoredImage[];
+  total: number;
+}

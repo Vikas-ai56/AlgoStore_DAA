@@ -1,167 +1,200 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import type { StepPayload } from '../../types';
 
 interface Props {
   payload: StepPayload;
   originalDims: [number, number];
+  paddedDims: [number, number];
   theme: 'dark' | 'light';
 }
 
-const CANVAS_W = 480;
-const CANVAS_H = 360;
+function drawPixels(canvas: HTMLCanvasElement | null, grid: number[][], rows: number, cols: number) {
+  if (!canvas || rows === 0 || cols === 0) return;
+  canvas.width = cols;
+  canvas.height = rows;
+  const ctx = canvas.getContext('2d')!;
+  const img = ctx.createImageData(cols, rows);
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const v = Math.min(255, Math.max(0, grid[r]?.[c] ?? 128));
+      const i = (r * cols + c) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+      img.data[i + 3] = 255;
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+}
 
-export default function Step1Padded({ payload, originalDims, theme }: Props) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; r: number; c: number; v: number } | null>(null);
+function Chip({ label, value }: { label: string; value: string }) {
+  return (
+    <div style={{
+      display: 'flex', flexDirection: 'column', alignItems: 'center',
+      padding: '6px 14px', border: '1px solid var(--border)',
+      borderRadius: 6, background: 'var(--surface)',
+    }}>
+      <span style={{ fontSize: 9, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</span>
+      <span style={{ fontSize: 14, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--text-1)', marginTop: 2 }}>{value}</span>
+    </div>
+  );
+}
+
+export default function Step1Padded({ payload, originalDims, paddedDims, theme }: Props) {
+  const origRef = useRef<HTMLCanvasElement>(null);
+  const padRef  = useRef<HTMLCanvasElement>(null);
   const dark = theme === 'dark';
 
   const grid = payload.step1_padded_pixels;
-  const rows = grid.length;
-  const cols = grid[0]?.length ?? 0;
-  const origH = originalDims[0], origW = originalDims[1];
+  const [padH, padW] = paddedDims;
+  const [origH, origW] = originalDims;
 
+  // Compute the visual (downscaled) original size within the padded grid
+  const MAX_DIM = 128;
+  const scale = MAX_DIM / Math.max(origH, origW);
+  const visH = Math.round(origH * scale);
+  const visW = Math.round(origW * scale);
+
+  const deltaH = padH - visH;
+  const deltaW = padW - visW;
+
+  // Left canvas: original content only
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas || rows === 0 || cols === 0) return;
+    drawPixels(origRef.current, grid, visH, visW);
+  }, [grid, visH, visW]);
+
+  // Right canvas: full padded grid + green overlay
+  useEffect(() => {
+    const canvas = padRef.current;
+    if (!canvas) return;
+    drawPixels(canvas, grid, padH, padW);
     const ctx = canvas.getContext('2d')!;
-    const scaleX = CANVAS_W / cols;
-    const scaleY = CANVAS_H / rows;
 
-    ctx.clearRect(0, 0, CANVAS_W, CANVAS_H);
+    // Green semi-transparent fill on pad region
+    ctx.fillStyle = 'rgba(26,107,60,0.30)';
+    if (deltaW > 0) ctx.fillRect(visW, 0, deltaW, padH);
+    if (deltaH > 0) ctx.fillRect(0, visH, padW, deltaH);
 
-    // Draw pixel data
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const v = grid[r][c];
-        const isPad = r >= origH || c >= origW;
-        ctx.fillStyle = isPad ? '#0a0a0a' : `rgb(${v},${v},${v})`;
-        ctx.fillRect(c * scaleX, r * scaleY, scaleX + 0.5, scaleY + 0.5);
-      }
-    }
-
-    // Orange diagonal hatch on padded region
-    ctx.save();
-    ctx.strokeStyle = 'rgba(234, 88, 12, 0.55)';
+    // Dashed green border around pad area
+    ctx.strokeStyle = 'rgba(26,107,60,0.85)';
     ctx.lineWidth = 1;
-    // Bottom padding band
-    if (origH < rows) {
-      const padY = origH * scaleY;
-      const spacing = 8;
-      for (let i = -CANVAS_W; i < CANVAS_H; i += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(0, padY + i);
-        ctx.lineTo(CANVAS_W, padY + i + CANVAS_W);
-        ctx.stroke();
-      }
-      ctx.fillStyle = 'rgba(234, 88, 12, 0.06)';
-      ctx.fillRect(0, padY, CANVAS_W, CANVAS_H - padY);
-    }
-    // Right padding band
-    if (origW < cols) {
-      const padX = origW * scaleX;
-      const spacing = 8;
-      for (let i = -CANVAS_H; i < CANVAS_W; i += spacing) {
-        ctx.beginPath();
-        ctx.moveTo(padX + i, 0);
-        ctx.lineTo(padX + i + CANVAS_H, CANVAS_H);
-        ctx.stroke();
-      }
-      ctx.fillStyle = 'rgba(234, 88, 12, 0.06)';
-      ctx.fillRect(padX, 0, CANVAS_W - padX, CANVAS_H);
-    }
-
-    // 8x8 block grid lines
-    ctx.strokeStyle = 'rgba(251, 191, 36, 0.18)';
-    ctx.lineWidth = 0.5;
-    for (let r8 = 0; r8 <= rows; r8 += 8) {
-      ctx.beginPath();
-      ctx.moveTo(0, r8 * scaleY);
-      ctx.lineTo(CANVAS_W, r8 * scaleY);
-      ctx.stroke();
-    }
-    for (let c8 = 0; c8 <= cols; c8 += 8) {
-      ctx.beginPath();
-      ctx.moveTo(c8 * scaleX, 0);
-      ctx.lineTo(c8 * scaleX, CANVAS_H);
-      ctx.stroke();
-    }
-
-    // Original boundary
-    ctx.strokeStyle = '#f59e0b';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([4, 3]);
-    ctx.strokeRect(0, 0, origW * scaleX, origH * scaleY);
+    ctx.setLineDash([3, 2]);
+    if (deltaW > 0) ctx.strokeRect(visW + 0.5, 0.5, deltaW - 1, padH - 1);
+    if (deltaH > 0) ctx.strokeRect(0.5, visH + 0.5, padW - 1, deltaH - 1);
     ctx.setLineDash([]);
 
-    ctx.restore();
-  }, [grid, rows, cols, origH, origW]);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const px = e.clientX - rect.left;
-    const py = e.clientY - rect.top;
-    const scaleX = CANVAS_W / cols;
-    const scaleY = CANVAS_H / rows;
-    const c = Math.floor(px / scaleX);
-    const r = Math.floor(py / scaleY);
-    if (r >= 0 && r < rows && c >= 0 && c < cols) {
-      setTooltip({ x: e.clientX + 12, y: e.clientY + 8, r, c, v: grid[r][c] });
+    // 8×8 block grid
+    ctx.strokeStyle = 'rgba(255,255,255,0.14)';
+    ctx.lineWidth = 0.5;
+    for (let r8 = 0; r8 <= padH; r8 += 8) {
+      ctx.beginPath(); ctx.moveTo(0, r8); ctx.lineTo(padW, r8); ctx.stroke();
     }
+    for (let c8 = 0; c8 <= padW; c8 += 8) {
+      ctx.beginPath(); ctx.moveTo(c8, 0); ctx.lineTo(c8, padH); ctx.stroke();
+    }
+
+    // Original boundary dashed amber line
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+    if (deltaW > 0 || deltaH > 0) ctx.strokeRect(0.5, 0.5, visW - 1, visH - 1);
+    ctx.setLineDash([]);
+  }, [grid, padH, padW, visH, visW, deltaH, deltaW]);
+
+  const canvasStyle: React.CSSProperties = {
+    display: 'block', width: '100%', height: 'auto',
+    imageRendering: 'pixelated',
+    border: '1px solid var(--border)', borderRadius: 4,
+    background: '#000',
   };
 
-  const bd = dark ? '#27272a' : '#e4e4e7';
+  // Ruler: 300-unit viewBox spanning padW px
+  const RW = 300;
+  const ticks = Array.from({ length: Math.ceil(padW / 8) + 1 }, (_, i) => i * 8).filter(p => p <= padW);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: 16, height: '100%' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span style={{ fontSize: 12, color: dark ? '#a1a1aa' : '#64748b' }}>
-          Padded grayscale — {cols}×{rows}px
-          <span style={{ fontFamily: "'JetBrains Mono', monospace", marginLeft: 6, color: dark ? '#52525b' : '#94a3b8', fontSize: 11 }}>
-            (orig: {origW}×{origH})
-          </span>
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, fontSize: 11, color: dark ? '#52525b' : '#94a3b8' }}>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ display: 'inline-block', width: 16, height: 8, border: '1.5px dashed #f59e0b', borderRadius: 1 }} />
-            original bounds
-          </span>
-          <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ display: 'inline-block', width: 16, height: 8, background: 'rgba(234,88,12,0.25)', borderRadius: 1 }} />
-            pad region
-          </span>
+    <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+
+      {/* LEFT PANE — Original */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+          Original
+        </div>
+        <canvas ref={origRef} style={canvasStyle} />
+        <div style={{ fontSize: 11, color: 'var(--text-2)' }}>
+          Downscaled source — no padding. Shows only the content area{' '}
+          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-1)' }}>{visW}×{visH}px</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Chip label="Original file" value={`${origW}×${origH}`} />
+          <Chip label="Downscaled" value={`${visW}×${visH}`} />
+          <Chip label="Added" value={`+${deltaW}×${deltaH}px`} />
         </div>
       </div>
 
-      <div style={{
-        flex: 1,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        border: `1px solid ${bd}`,
-        borderRadius: 4,
-        overflow: 'hidden',
-        background: '#000',
-      }}>
-        <canvas
-          ref={canvasRef}
-          width={CANVAS_W}
-          height={CANVAS_H}
-          style={{ display: 'block', maxWidth: '100%', maxHeight: '100%', cursor: 'crosshair' }}
-          onMouseMove={handleMouseMove}
-          onMouseLeave={() => setTooltip(null)}
-        />
-      </div>
+      <div style={{ width: 1, background: 'var(--border)', flexShrink: 0 }} />
 
-      {tooltip && (
-        <div className="heatmap-tooltip" style={{ left: tooltip.x, top: tooltip.y }}>
-          Block [{Math.floor(tooltip.r / 8).toString().padStart(2, '0')}, {Math.floor(tooltip.c / 8).toString().padStart(2, '0')}] &nbsp;
-          px [{tooltip.r}, {tooltip.c}] &nbsp;
-          <span style={{ color: '#f59e0b' }}>v={tooltip.v}</span>
-          {(tooltip.r >= origH || tooltip.c >= origW) && (
-            <span style={{ color: '#ea580c', marginLeft: 8 }}>[PAD]</span>
+      {/* RIGHT PANE — Padded */}
+      <div style={{ flex: 1, overflowY: 'auto', padding: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Padded
+          </span>
+          <div style={{ display: 'flex', gap: 12, fontSize: 10, color: 'var(--text-3)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ display: 'inline-block', width: 14, height: 8, border: '1px dashed #f59e0b', borderRadius: 1 }} />
+              original bounds
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ display: 'inline-block', width: 14, height: 8, background: 'rgba(26,107,60,0.35)', borderRadius: 1 }} />
+              pad region
+            </span>
+          </div>
+        </div>
+
+        <canvas ref={padRef} style={canvasStyle} />
+
+        {/* Pixel ruler SVG */}
+        <svg width="100%" height="30" viewBox={`0 0 ${RW} 30`} preserveAspectRatio="none"
+          style={{ overflow: 'visible' }}>
+          {/* Track */}
+          <rect x={0} y={12} width={RW} height={10} fill={dark ? '#18181b' : '#f1f5f9'} stroke="var(--border)" strokeWidth={0.5} />
+          {/* Pad fill on track */}
+          {deltaW > 0 && (
+            <rect x={(visW / padW) * RW} y={12} width={((deltaW) / padW) * RW} height={10}
+              fill="rgba(26,107,60,0.2)" stroke="none" />
           )}
+          {/* Ticks */}
+          {ticks.map(px => {
+            const x = (px / padW) * RW;
+            return (
+              <g key={px}>
+                <line x1={x} y1={12} x2={x} y2={px % 16 === 0 ? 24 : 20} stroke={dark ? '#3f3f46' : '#cbd5e1'} strokeWidth={0.5} />
+                {px % 16 === 0 && px < padW && (
+                  <text x={x} y={10} fontSize={6} fill={dark ? '#52525b' : '#94a3b8'} textAnchor="middle">{px}</text>
+                )}
+              </g>
+            );
+          })}
+          {/* Original boundary */}
+          {deltaW > 0 && (() => {
+            const x = (visW / padW) * RW;
+            return (
+              <>
+                <line x1={x} y1={8} x2={x} y2={28} stroke="#f59e0b" strokeWidth={1.5} />
+                <text x={x - 2} y={8} fontSize={7} fill="#f59e0b" textAnchor="end">{visW}</text>
+                <text x={(x + RW) / 2} y={19} fontSize={6} fill={dark ? '#10b981' : '#059669'} textAnchor="middle">+{deltaW}px pad</text>
+              </>
+            );
+          })()}
+          {/* End label */}
+          <text x={RW} y={10} fontSize={6} fill={dark ? '#52525b' : '#94a3b8'} textAnchor="end">{padW}</text>
+        </svg>
+
+        <div style={{ fontSize: 11, color: 'var(--text-2)' }}>
+          Padded to next 8×8 block boundary —{' '}
+          <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-1)' }}>{padW}×{padH}px</span>
+          {' '}({Math.ceil(padW / 8) * Math.ceil(padH / 8)} blocks)
         </div>
-      )}
+      </div>
     </div>
   );
 }

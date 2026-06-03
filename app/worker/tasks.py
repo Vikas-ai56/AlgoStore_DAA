@@ -1,5 +1,5 @@
+import json
 from pathlib import Path
-import pickle
 
 import cv2
 
@@ -17,6 +17,7 @@ def process_compressed_image(
 	upload_needed: bool = True,
 	obj_name: str | None = None,
 	phash_value: str | None = None,
+	delete_source: bool = False,
 ):
 	def _progress(step: int, total: int, label: str):
 		self.update_state(
@@ -37,9 +38,22 @@ def process_compressed_image(
 	compression_data = [compress_image(channel, quantization_factor=quantization_factor) for channel in cv2.split(image)]
 
 	_progress(3, 4, "Serializing compressed data")
-	compressed_file = path.with_name(f"{path.stem}_compressed.bin")
-	with open(compressed_file, "wb") as f:
-		pickle.dump(compression_data, f)
+	# Store as JSON instead of pickle to avoid arbitrary code execution on load.
+	# code_to_symbol tuple values serialize as JSON arrays; rle_decode handles both.
+	serializable = [
+		{
+			"bitstream": bs,
+			"code_to_symbol": {k: list(v) for k, v in codes.items()},
+			"meta": {
+				"orig_shape": list(meta["orig_shape"]),
+				"padded_shape": list(meta["padded_shape"]),
+				"q_factor": meta["q_factor"],
+			},
+		}
+		for bs, codes, meta in compression_data
+	]
+	compressed_file = path.with_name(f"{path.stem}_compressed.json")
+	compressed_file.write_text(json.dumps(serializable))
 
 	compressed_size = compressed_file.stat().st_size
 	compression_ratio = compressed_size / original_size if original_size > 0 else 1.0
@@ -54,6 +68,8 @@ def process_compressed_image(
 
 	if not upload_needed:
 		compressed_file.unlink()
+		if delete_source:
+			path.unlink(missing_ok=True)
 		return result
 
 	_progress(4, 4, "Uploading to object storage")
@@ -65,5 +81,7 @@ def process_compressed_image(
 		compression_ratio=compression_ratio,
 	)
 	compressed_file.unlink()
+	if delete_source:
+		path.unlink(missing_ok=True)
 	result["stored_object"] = obj_name or compressed_file.name
 	return result

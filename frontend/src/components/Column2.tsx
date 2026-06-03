@@ -10,6 +10,7 @@ import Step5RLE from './steps/Step5RLE';
 import Step6Huffman from './steps/Step6Huffman';
 import Step7CodeTable from './steps/Step7CodeTable';
 import Step8Reconstruct from './steps/Step8Reconstruct';
+import Step9Decompress from './steps/Step9Decompress';
 
 const CHANNELS: { key: ChannelKey; label: string; desc: string }[] = [
   { key: 'y_channel',  label: 'Y',  desc: 'Luminance' },
@@ -26,6 +27,7 @@ const STEPS = [
   { n: 6, name: 'Huffman' },
   { n: 7, name: 'Codes' },
   { n: 8, name: 'IDCT' },
+  { n: 9, name: 'Reconstruct' },
 ];
 
 // ─── Source Monitor ───────────────────────────────────────────────────────────
@@ -165,7 +167,10 @@ function SourceMonitor({
 
 // ─── Column 2 root ────────────────────────────────────────────────────────────
 export default function Column2() {
-  const { theme, dataset, activeChannel, activeStep, setActiveChannel, setActiveStep } = useStore();
+  const { theme, dataset, activeChannel, activeStep, setActiveChannel, setActiveStep, jobs, currentJobId } = useStore();
+  const currentJob = jobs.find((j) => j.id === currentJobId) ?? jobs[0] ?? null;
+  const imageId = currentJob?.imageId;
+  const storageStatus = currentJob?.storageStatus;
   const dark = theme === 'dark';
   const bd = dark ? '#27272a' : '#e2e8f0';
   const accent = dark ? '#60a5fa' : '#2563eb';
@@ -269,14 +274,15 @@ export default function Column2() {
 
           {/* Step visualization */}
           <div style={{ flex: 1, overflow: 'hidden', position: 'relative' }}>
-            {activeStep === 1 && <Step1Padded payload={payload} originalDims={ds.metadata.original_dims} theme={theme} />}
+            {activeStep === 1 && <Step1Padded payload={payload} originalDims={ds.metadata.original_dims} paddedDims={ds.metadata.padded_dims} theme={theme} />}
             {activeStep === 2 && <Step2DCT payload={payload} theme={theme} />}
             {activeStep === 3 && <Step3QMatrix payload={payload} theme={theme} />}
             {activeStep === 4 && <Step4Quantized payload={payload} theme={theme} />}
             {activeStep === 5 && <Step5RLE payload={payload} theme={theme} />}
             {activeStep === 6 && <Step6Huffman payload={payload} theme={theme} />}
             {activeStep === 7 && <Step7CodeTable payload={payload} theme={theme} />}
-            {activeStep === 8 && <Step8Reconstruct payload={payload} theme={theme} />}
+            {activeStep === 8 && <Step8Reconstruct payload={payload} theme={theme} metrics={ds.metrics} />}
+            {activeStep === 9 && <Step9Decompress imageId={imageId} storageStatus={storageStatus} theme={theme} />}
           </div>
         </div>
       </div>

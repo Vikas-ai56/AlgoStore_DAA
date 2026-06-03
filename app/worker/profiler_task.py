@@ -159,11 +159,6 @@ def profile_image(self, image_path: str, q_factor: float = 24.0):
         d.pop("_reconstructed")
         d.pop("_bitstream_len")
 
-    try:
-        path.unlink()
-    except Exception:
-        pass
-
     return {
         "metadata": {
             "original_dims": [orig_h, orig_w],

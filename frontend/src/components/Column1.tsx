@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { UploadCloud, Loader2 } from 'lucide-react';
 import { useStore } from '../store';
 import { useJobPoller, uploadImage } from '../api/hooks';
-import type { JobEntry } from '../types';
+import type { JobEntry, ProfilerDataset, StorageJobResult } from '../types';
 
 // ─── Section label ────────────────────────────────────────────────────────────
 function SectionLabel({ label, dark }: { label: string; dark: boolean }) {
@@ -25,7 +25,7 @@ function SectionLabel({ label, dark }: { label: string; dark: boolean }) {
 }
 
 // ─── Dropzone ─────────────────────────────────────────────────────────────────
-function Dropzone({ onJobStarted, dark }: { onJobStarted: (jobId: string) => void; dark: boolean }) {
+function Dropzone({ onJobStarted, dark }: { onJobStarted: (jobId: string, storageJobId?: string) => void; dark: boolean }) {
   const { addJob, updateJob, addLog } = useStore();
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -37,10 +37,10 @@ function Dropzone({ onJobStarted, dark }: { onJobStarted: (jobId: string) => voi
     addLog(`[${new Date().toISOString().slice(11, 23)}] Received — ${file.name} (${(file.size / 1024).toFixed(1)} KB)`);
     setUploading(true);
     try {
-      const { job_id } = await uploadImage(file);
-      updateJob(tempId, { id: job_id, status: 'STARTED', stage: 'Processing' });
+      const { job_id, storage_job_id } = await uploadImage(file);
+      updateJob(tempId, { id: job_id, status: 'STARTED', stage: 'Processing', storageJobId: storage_job_id, storageStatus: 'PENDING' });
       addLog(`[${new Date().toISOString().slice(11, 23)}] Enqueued — ${job_id.slice(0, 8)}`);
-      onJobStarted(job_id);
+      onJobStarted(job_id, storage_job_id);
     } catch (err) {
       updateJob(tempId, { status: 'FAILURE', stage: 'Upload failed', error: String(err) });
       addLog(`[ERR] Upload failed: ${err}`);
@@ -123,6 +123,24 @@ function StatusDot({ status }: { status: JobEntry['status'] }) {
   );
 }
 
+// ─── Storage status indicator ─────────────────────────────────────────────────
+function StorageDot({ storageStatus }: { storageStatus: JobEntry['storageStatus'] }) {
+  if (!storageStatus) return null;
+  const map: Record<NonNullable<JobEntry['storageStatus']>, { color: string; label: string }> = {
+    SUCCESS: { color: '#059669', label: 'Stored' },
+    FAILURE: { color: '#dc2626', label: 'Store fail' },
+    PENDING: { color: '#d97706', label: 'Storing' },
+    STARTED: { color: '#d97706', label: 'Storing' },
+  };
+  const { color, label } = map[storageStatus];
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 10 }}>
+      <span style={{ width: 5, height: 5, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />
+      <span style={{ color, fontWeight: 400 }}>{label}</span>
+    </span>
+  );
+}
+
 // ─── Queue ────────────────────────────────────────────────────────────────────
 function QueueManager({ dark }: { dark: boolean }) {
   const { jobs } = useStore();
@@ -187,7 +205,10 @@ function QueueManager({ dark }: { dark: boolean }) {
             )}
           </div>
 
-          <StatusDot status={job.status} />
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 3 }}>
+            <StatusDot status={job.status} />
+            {job.storageJobId && <StorageDot storageStatus={job.storageStatus} />}
+          </div>
         </div>
       ))}
     </div>
@@ -255,12 +276,17 @@ function LogPanel() {
 
 // ─── Column 1 root ────────────────────────────────────────────────────────────
 export default function Column1() {
-  const { theme, updateJob, setDataset, addLog } = useStore();
+  const { theme, updateJob, setDataset, addLog, setCurrentJobId } = useStore();
   const dark = theme === 'dark';
 
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [polling, setPolling] = useState(false);
   const { data: pollData } = useJobPoller(activeJobId, polling);
+
+  const [storageJobId, setStorageJobId] = useState<string | null>(null);
+  const [storagePolling, setStoragePolling] = useState(false);
+  const { data: storagePollData } = useJobPoller(storageJobId, storagePolling);
+  const profileJobIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!pollData || !activeJobId) return;
@@ -270,8 +296,8 @@ export default function Column1() {
       addLog(`[${new Date().toISOString().slice(11, 23)}] ${pollData.current_stage} — ${pollData.progress}%`);
     }
     if (pollData.status === 'SUCCESS') {
-      updateJob(activeJobId, { status: 'SUCCESS', stage: 'Complete', progress: 100, payload: pollData.payload });
-      if (pollData.payload) setDataset(pollData.payload);
+      updateJob(activeJobId, { status: 'SUCCESS', stage: 'Complete', progress: 100, payload: pollData.payload as ProfilerDataset | undefined });
+      if (pollData.payload) setDataset(pollData.payload as ProfilerDataset);
       addLog(`[${new Date().toISOString().slice(11, 23)}] Complete`);
       setPolling(false);
       setActiveJobId(null);
@@ -284,10 +310,39 @@ export default function Column1() {
     }
   }, [pollData, activeJobId, updateJob, setDataset, addLog]);
 
-  const handleJobStarted = useCallback((jobId: string) => {
+  useEffect(() => {
+    if (!storagePollData || !storageJobId) return;
+
+    if (storagePollData.status === 'SUCCESS') {
+      const result = storagePollData.payload as StorageJobResult | undefined;
+      const imageId = result?.upload_response?.image_id;
+      if (profileJobIdRef.current) {
+        updateJob(profileJobIdRef.current, { storageStatus: 'SUCCESS', imageId });
+      }
+      addLog(`[${new Date().toISOString().slice(11, 23)}] Stored — id:${imageId?.slice(0, 8) ?? '?'}`);
+      setStoragePolling(false);
+      setStorageJobId(null);
+    }
+    if (storagePollData.status === 'FAILURE') {
+      if (profileJobIdRef.current) {
+        updateJob(profileJobIdRef.current, { storageStatus: 'FAILURE' });
+      }
+      addLog(`[ERR] Storage task failed`);
+      setStoragePolling(false);
+      setStorageJobId(null);
+    }
+  }, [storagePollData, storageJobId, updateJob, addLog]);
+
+  const handleJobStarted = useCallback((jobId: string, sJobId?: string) => {
     setActiveJobId(jobId);
     setPolling(true);
-  }, []);
+    profileJobIdRef.current = jobId;
+    setCurrentJobId(jobId);
+    if (sJobId) {
+      setStorageJobId(sJobId);
+      setStoragePolling(true);
+    }
+  }, [setCurrentJobId]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
