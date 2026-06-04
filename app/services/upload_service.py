@@ -18,6 +18,8 @@ load_dotenv(override=True)
 
 class Upload:
     def __init__(self, bucket: str = "main-bucket"):
+        minio_host = os.getenv("MINIO_SERVER", "localhost")
+        minio_port = os.getenv("MINIO_PORT", "9000")
         self.client = boto3.client(
             "s3",
             endpoint_url=os.getenv("MINIO_ENDPOINT", "http://localhost:9000"),

@@ -5,6 +5,7 @@ from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, JSON, Strin
 from app.database.base import Base
 
 
+
 class User(Base):
     __tablename__ = "users"
 
@@ -26,6 +27,10 @@ class Image(Base):
     height = Column(Integer, nullable=False)
     file_size = Column(Integer, nullable=False)
     sha256 = Column(String, nullable=False, unique=True, index=True)
+
+    compression_results = relationship("CompressionResult", back_populates="image", cascade="all, delete-orphan")
+    phash_results = relationship("PhashResult", back_populates="image", uselist=False, cascade="all, delete-orphan")
+    jobs = relationship("Job", back_populates="image", cascade="all, delete-orphan")
 
 
 class CompressionResult(Base):
