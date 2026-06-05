@@ -1,47 +1,47 @@
-from contextlib import asynccontextmanager
+import time
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import images, jobs, analysis
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup: nothing blocking yet (BKTree rehydration will go here in Phase 3)
-    yield
-    # Shutdown cleanup placeholder
-
-
 app = FastAPI(
-    title="AlgoStore DAA",
-    description="Image compression pipeline — DCT + RLE + Huffman, pHash, BKTree similarity, MinIO storage.",
+    title="AlgoStore",
+    description="DCT+Huffman image compression profiler API",
     version="0.1.0",
-    lifespan=lifespan,
 )
 
+# CORS: only needed when the frontend is served from a different origin than
+# the API.  In dev the Vite proxy handles this, but it's harmless to include.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://localhost:5173", "http://localhost:3000"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-app.include_router(images.router, prefix="/api/images", tags=["images"])
-app.include_router(jobs.router,   prefix="/api/jobs",   tags=["jobs"])
-app.include_router(analysis.router, prefix="/api/analysis", tags=["analysis"])
+app.include_router(images.router)
+app.include_router(jobs.router)
+app.include_router(analysis.router)
 
 
-@app.get("/", tags=["health"])
+@app.middleware("http")
+async def add_process_time_header(request: Request, call_next):
+    t = time.perf_counter()
+    response = await call_next(request)
+    response.headers["X-Process-Time"] = f"{time.perf_counter() - t:.4f}s"
+    return response
+
+
+@app.get("/")
 async def root():
     return {
-        "project": "AlgoStore DAA",
-        "description": "Custom image compression (DCT+RLE+Huffman) with MinIO storage, pHash similarity, and real-time Celery pipeline.",
-        "docs": "/docs",
+        "service": "AlgoStore",
+        "endpoints": {
+            "upload": "POST /profiler/upload",
+            "poll":   "GET  /jobs/{task_id}",
+            "sync_compress": "POST /analysis/compress",
+            "phash_debug":   "POST /analysis/phash",
+            "docs":   "/docs",
+        },
     }
-
-
-@app.get("/health", tags=["health"])
-async def health():
-    return {"status": "ok"}

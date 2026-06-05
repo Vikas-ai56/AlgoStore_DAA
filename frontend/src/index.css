@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Design tokens ──────────────────────────────────────────────────────────── */
+:root {
+  --bg: #ffffff;
+  --surface: #f8fafc;
+  --surface-alt: #f1f5f9;
+  --border: #e2e8f0;
+  --border-subtle: #f1f5f9;
+  --text-1: #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+  --accent: #2563eb;
+  --accent-bg: #eff6ff;
+  --success: #059669;
+  --warning: #d97706;
+  --error: #dc2626;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+.dark-mode {
+  --bg: #09090b;
+  --surface: #111113;
+  --surface-alt: #18181b;
+  --border: #27272a;
+  --border-subtle: #1f1f23;
+  --text-1: #f8fafc;
+  --text-2: #a1a1aa;
+  --text-3: #52525b;
+  --accent: #60a5fa;
+  --accent-bg: #0c1a3a;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --error: #ef4444;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text-1);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ─── Animations ─────────────────────────────────────────────────────────────── */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes scan-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes blink-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.log-line {
+  animation: scan-in 0.1s ease-out both;
+}
+
+.cursor-blink::after {
+  content: '▊';
+  animation: blink-cursor 1s step-end infinite;
+  color: #4ade80;
+}
+
+/* ─── Canvas tooltip ─────────────────────────────────────────────────────────── */
+.heatmap-tooltip {
+  position: fixed;
+  pointer-events: none;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  padding: 5px 10px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #f1f5f9;
+  z-index: 9999;
+  white-space: nowrap;
+  border-radius: 4px;
+}
+
+/* ─── Step animations ───────────────────────────────────────────────────────── */
+@keyframes chip-enter {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes sweep-pulse {
+  0%   { box-shadow: 0 0 0 2px var(--success); }
+  50%  { box-shadow: 0 0 0 4px var(--success), 0 0 12px rgba(5,150,105,0.4); }
+  100% { box-shadow: 0 0 0 2px var(--success); }
+}
+
+/* Stage 4 zero-cell checkerboard */
+.zero-checker {
+  background-image: repeating-conic-gradient(var(--surface-alt) 0% 25%, var(--surface) 0% 50%);
+  background-size: 8px 8px;
+  background-position: center;
+}
+
+/* Stage 7 bit chip */
+.bit-chip {
+  animation: chip-enter 0.3s ease-out both;
+}
+
+/* Stage 3 sweep highlight */
+.sweep-cell {
+  animation: sweep-pulse 0.4s ease-in-out;
+  outline: 2px solid var(--success);
+  outline-offset: -1px;
+  z-index: 2;
+}
+
+/* ─── D3 Huffman tree ────────────────────────────────────────────────────────── */
+.huffman-edge {
+  stroke: #cbd5e1;
+  stroke-width: 1.5;
+  transition: stroke 0.2s;
+}
+.dark-mode .huffman-edge { stroke: #3f3f46; }
+.huffman-edge.highlighted { stroke: #2563eb; stroke-width: 2.5; }
+.huffman-node circle { transition: fill 0.2s; }

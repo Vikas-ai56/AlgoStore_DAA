@@ -1,18 +1,25 @@
+# pyrefly: ignore [missing-import]
 from celery import Celery
 import os
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
-REDIS_PORT = os.getenv("REDIS_PORT", "6379")
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", f"redis://{REDIS_HOST}:{REDIS_PORT}/0")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", f"redis://{REDIS_HOST}:{REDIS_PORT}/1")
+REDIS_URL = f"redis://localhost:{os.getenv('REDIS_PORT', '6379')}"
 
 app = Celery(
     "workers",
-    broker=CELERY_BROKER_URL,
-    result_backend=CELERY_RESULT_BACKEND,
+    broker=REDIS_URL,
+    result_backend=REDIS_URL,
 )
-app.conf.result_expires = 3600
+
+app.conf.update(
+    task_serializer="json",
+    result_serializer="json",
+    accept_content=["json"],
+    timezone="UTC",
+    enable_utc=True,
+    # Keep results long enough for the frontend to poll after a page refresh
+    result_expires=3600,
+)
 

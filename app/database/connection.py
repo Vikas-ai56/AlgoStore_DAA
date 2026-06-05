@@ -6,11 +6,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 def get_database_url() -> str:
-    user = os.getenv("POSTGRES_USER", "postgres")
+    user = os.getenv("POSTGRES_USER", "vikas")
     password = os.getenv("POSTGRES_PASSWORD", "letmein")
     host = os.getenv("POSTGRES_SERVER", "localhost")
     port = os.getenv("POSTGRES_PORT", "5432")
-    db = os.getenv("POSTGRES_DB", "algostore")
+    db = os.getenv("POSTGRES_DB", "postgres-algostore-daa")
     return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{db}"
 
 engine = create_engine(get_database_url())

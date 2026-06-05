@@ -88,6 +88,7 @@ def heapifyExtract(root , index , type="Min"): # Used to heapify after extractin
                 swapchild = right
             if root.list[index] > root.list[swapchild]:
                 root.list[swapchild] , root.list[index] = root.list[index] , root.list[swapchild]
+                heapifyExtract(root , swapchild , type)
         else:
             if root.list[left] > root.list[right]:
                 swapchild = left

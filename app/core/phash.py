@@ -19,8 +19,17 @@ def _load_grayscale(image: np.ndarray | str | Path) -> np.ndarray:
 	raise ValueError(f"Unsupported image shape: {image.shape}")
 
 
-def compute_phash(image: np.ndarray | str | Path, hash_size: int = 8, highfreq_factor: int = 4) -> str:
-	"""Compute a 64-bit DCT perceptual hash as a 16-character hex string."""
+def compute_phash(
+	image: np.ndarray | str | Path,
+	hash_size: int = 8,
+	highfreq_factor: int = 4,
+	debug: bool = False,
+) -> "str | dict":
+	"""Compute a 64-bit DCT perceptual hash as a 16-character hex string.
+
+	When debug=True returns a dict with all 6 intermediate arrays plus the hash,
+	useful for the pHash step visualizer.
+	"""
 	gray = _load_grayscale(image)
 	size = hash_size * highfreq_factor
 	resized = cv2.resize(gray, (size, size), interpolation=cv2.INTER_AREA)
@@ -30,7 +39,20 @@ def compute_phash(image: np.ndarray | str | Path, hash_size: int = 8, highfreq_f
 	mean = low_freq[1:, 1:].mean()
 	bits = low_freq >= mean
 	bit_string = "".join("1" if bit else "0" for bit in bits.flatten())
-	return f"{int(bit_string, 2):016x}"
+	phash_hex = f"{int(bit_string, 2):016x}"
+
+	if not debug:
+		return phash_hex
+
+	return {
+		"gray": gray,
+		"resized": resized,
+		"dct_rows": dct_rows,
+		"dct_full": dct_values,
+		"low_freq": low_freq,
+		"hash_bits": bits,
+		"phash": phash_hex,
+	}
 
 
 def phash_distance(hash_a: str, hash_b: str) -> int:
